@@ -330,22 +330,43 @@ local function createMenu()
     aimBtn.Parent = aimContainer
     yPosAim = yPosAim + 35
 
-    local btnCornerAim = Instance.new("UICorner")
-    btnCornerAim.Name = randomString(6)
-    btnCornerAim.CornerRadius = UDim.new(0,8)
-    btnCornerAim.Parent = aimBtn
+local player = game.Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local runService = game:GetService("RunService")
 
-    aimBtn.MouseButton1Click:Connect(function()
-        aimEnabled = not aimEnabled
-        if aimEnabled then
-            aimBtn.BackgroundColor3 = Color3.fromRGB(0,255,0)
-            aimBtn.Text = "AIM: ВКЛ"
-        else
-            aimBtn.BackgroundColor3 = Color3.fromRGB(255,0,0)
-            aimBtn.Text = "AIM: ВЫКЛ"
-            currentTarget = nil
+-- Настройки
+local aimEnabled = true          -- включен сразу
+local targetPart = "Head"        -- часть тела
+
+-- Функция поиска ближайшего игрока
+local function getClosestPlayer()
+    local closest = nil
+    local shortestDistance = math.huge
+
+    for _, plr in ipairs(game.Players:GetPlayers()) do
+        if plr ~= player and plr.Character then
+            local part = plr.Character:FindFirstChild(targetPart)
+            if part then
+                local distance = (player.Character.HumanoidRootPart.Position - part.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closest = part
+                end
+            end
         end
-    end)
+    end
+    return closest
+end
+
+-- Главный цикл
+runService.Heartbeat:Connect(function()
+    if aimEnabled then
+        local target = getClosestPlayer()
+        if target then
+            camera.CFrame = CFrame.lookAt(camera.CFrame.Position, target.Position)
+        end
+    end
+end)
 
     -- === НАПОЛНЕНИЕ ВКЛАДКИ HITBOX ===
     local yPosHit = 5
