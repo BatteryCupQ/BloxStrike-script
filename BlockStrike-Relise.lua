@@ -317,26 +317,40 @@ local function createMenu()
     -- === НАПОЛНЕНИЕ ВКЛАДКИ AIM ===
     local yPosAim = 5
 
-    local aimBtn = Instance.new("TextButton")
-    aimBtn.Name = randomString(8)
-    aimBtn.Size = UDim2.new(0,220,0,30)
-    aimBtn.Position = UDim2.new(0.5,-110,0,yPosAim)
-    aimBtn.BackgroundColor3 = Color3.fromRGB(255,0,0)
-    aimBtn.Text = "AIM: ВЫКЛ"
-    aimBtn.TextColor3 = Color3.new(1,1,1)
-    aimBtn.Font = Enum.Font.GothamBold
-    aimBtn.TextSize = 14
-    aimBtn.BorderSizePixel = 0
-    aimBtn.Parent = aimContainer
-    yPosAim = yPosAim + 35
+    local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.new(0.8, 0, 0, 25)
+toggleBtn.Position = UDim2.new(0.1, 0, 0, 30)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+toggleBtn.Text = "OFF"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.BorderSizePixel = 0
+toggleBtn.Parent = mainFrame
 
-local player = game.Players.LocalPlayer
-local camera = workspace.CurrentCamera
-local runService = game:GetService("RunService")
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 6)
+btnCorner.Parent = toggleBtn
 
--- Настройки
-local aimEnabled = true          -- включен сразу
-local targetPart = "Head"        -- часть тела
+-- Функция обновления кнопки
+local function updateButton()
+    if aimEnabled then
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        toggleBtn.Text = "ON"
+    else
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        toggleBtn.Text = "OFF"
+    end
+end
+
+updateButton() -- установка начального состояния
+
+-- Обработчик нажатия
+toggleBtn.MouseButton1Click:Connect(function()
+    aimEnabled = not aimEnabled
+    updateButton()
+end)
 
 -- Функция поиска ближайшего игрока
 local function getClosestPlayer()
@@ -347,10 +361,14 @@ local function getClosestPlayer()
         if plr ~= player and plr.Character then
             local part = plr.Character:FindFirstChild(targetPart)
             if part then
-                local distance = (player.Character.HumanoidRootPart.Position - part.Position).Magnitude
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    closest = part
+                -- Убедимся, что у игрока есть HumanoidRootPart для расчёта дистанции
+                local myRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                if myRoot then
+                    local distance = (myRoot.Position - part.Position).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closest = part
+                    end
                 end
             end
         end
