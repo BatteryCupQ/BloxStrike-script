@@ -288,10 +288,6 @@ local function createMenu()
     end)
 end
 
--- ========== КОНЕЦ ЧАСТИ 1 ==========
--- Теперь скопируй часть 2
--- ========== ЧАСТЬ 2 ==========
--- Плавающее окно для аима
 local function createSimpleAimGUI()
     local gui = Instance.new("ScreenGui")
     gui.Name = "SimpleAimGUI"
