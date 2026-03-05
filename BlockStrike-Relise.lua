@@ -11,102 +11,10 @@ local espEnabled = true
 local hitboxEnabled = true
 local extendHitbox = false
 local teamCheckEnabled = false
-local aimEnabled = false
 local hitboxScale = 1.2
-local aimRadius = 150
 local skeletonEnabled = true
 
--- НАСТРОЙКИ АИМА
-local aimSmoothness = 0.3
-local aimMethod = "mouse"
 
-local currentTarget = nil
-
--- Генератор случайных строк
-local function randomString(len)
-    local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    local s = ""
-    for i = 1, len do
-        s = s .. chars:sub(math.random(1, #chars), math.random(1, #chars))
-    end
-    return s
-end
-
--- Проверка тиммейта
-local function isTeammate(plr)
-    if not teamCheckEnabled then return false end
-    if not plr or not player then return false end
-    if player.Team and plr.Team then
-        return player.Team == plr.Team
-    end
-    if player.TeamColor and plr.TeamColor then
-        return player.TeamColor == plr.TeamColor
-    end
-    return false
-end
-
--- Круг FOV
-local fovCircle = Drawing.new("Circle")
-fovCircle.Visible = false
-fovCircle.Color = Color3.fromRGB(255, 0, 0)
-fovCircle.Thickness = 2
-fovCircle.NumSides = 60
-fovCircle.Filled = false
-fovCircle.Radius = aimRadius
-
--- Поиск ближайшей головы в круге
-local function getTargetInFov()
-    local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-    local closestDist = math.huge
-    local targetHead = nil
-    local targetPlayer = nil
-
-    for _, plr in ipairs(game.Players:GetPlayers()) do
-        if plr ~= player and plr.Character and not isTeammate(plr) then
-            local head = plr.Character:FindFirstChild("Head")
-            if head and head:IsA("BasePart") then
-                local headPos, onScreen = camera:WorldToViewportPoint(head.Position)
-                if onScreen then
-                    local headVec = Vector2.new(headPos.X, headPos.Y)
-                    local dist = (headVec - center).Magnitude
-                    if dist <= aimRadius and dist < closestDist then
-                        closestDist = dist
-                        targetHead = head
-                        targetPlayer = plr
-                    end
-                end
-            end
-        end
-    end
-    return targetHead, targetPlayer
-end
-
--- Функция аима
-local function aimAtTarget(targetHead)
-    if not targetHead then return end
-    local targetPos = targetHead.Position
-    local myHead = player.Character and player.Character:FindFirstChild("Head")
-    if not myHead then return end
-
-    if aimMethod == "mouse" and mousemoverel then
-        local vec, onScreen = camera:WorldToViewportPoint(targetPos)
-        if onScreen then
-            local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-            local delta = Vector2.new(vec.X, vec.Y) - screenCenter
-            mousemoverel(delta.X * aimSmoothness, delta.Y * aimSmoothness)
-            return true
-        end
-    end
-
-    if aimMethod == "camera" or not mousemoverel then
-        local direction = (targetPos - myHead.Position).unit
-        local currentCF = camera.CFrame
-        local targetCF = CFrame.lookAt(myHead.Position, myHead.Position + direction)
-        camera.CFrame = currentCF:Lerp(targetCF, aimSmoothness)
-        return true
-    end
-    return false
-end
 
 -- ========== НОВОЕ МЕНЮ С ВКЛАДКАМИ ==========
 local function createMenu()
@@ -164,18 +72,6 @@ local function createMenu()
     espTabBtn.BorderSizePixel = 0
     espTabBtn.Parent = tabFrame
 
-    local aimTabBtn = Instance.new("TextButton")
-    aimTabBtn.Name = randomString(6)
-    aimTabBtn.Size = UDim2.new(0.33, -3, 1, 0)
-    aimTabBtn.Position = UDim2.new(0.34, 0, 0, 0)
-    aimTabBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-    aimTabBtn.Text = "AIM"
-    aimTabBtn.TextColor3 = Color3.new(1,1,1)
-    aimTabBtn.Font = Enum.Font.GothamBold
-    aimTabBtn.TextSize = 14
-    aimTabBtn.BorderSizePixel = 0
-    aimTabBtn.Parent = tabFrame
-
     local hitTabBtn = Instance.new("TextButton")
     hitTabBtn.Name = randomString(6)
     hitTabBtn.Size = UDim2.new(0.33, -3, 1, 0)
@@ -209,15 +105,6 @@ local function createMenu()
     espContainer.BackgroundTransparency = 1
     espContainer.Visible = true
     espContainer.Parent = containerFrame
-
-    -- Вкладка AIM
-    local aimContainer = Instance.new("Frame")
-    aimContainer.Name = randomString(6)
-    aimContainer.Size = UDim2.new(1,0,1,0)
-    aimContainer.BackgroundTransparency = 1
-    aimContainer.Visible = false
-    aimContainer.Parent = containerFrame
-
     -- Вкладка HITBOX
     local hitContainer = Instance.new("Frame")
     hitContainer.Name = randomString(6)
