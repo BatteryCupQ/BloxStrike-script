@@ -298,8 +298,7 @@ previewContent.Name = "PreviewContent"
 previewContent.Size = UDim2.new(1, 0, 1, 0)
 previewContent.BackgroundTransparency = 1
 previewContent.Visible = false
-previewContent.Parent = content
--- ========== ЧАСТЬ 2 ==========
+previewContent.Parent = content-- ========== ЧАСТЬ 2 ==========
 -- ========== ВКЛАДКА PREVIEW ==========
 -- Создаём превью ESP прямо в меню
 local previewFrame = Instance.new("Frame")
