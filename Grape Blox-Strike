@@ -1,0 +1,646 @@
+--// Grape | Blox Strike
+
+local _s1 = game:GetService("Players")
+local _s2 = game:GetService("RunService")
+local _s3 = game:GetService("CoreGui")
+local _s4 = game:GetService("Debris")
+local _s5 = game:GetService("UserInputService")
+local _s6 = game:GetService("TweenService")
+
+local _lp  = _s1.LocalPlayer
+local _cam = workspace.CurrentCamera
+
+pcall(function()
+	for _, n in pairs({"GrapeBS","GrapeBSN","GrapeBSE"}) do
+		local o = _s3:FindFirstChild(n)
+		if o then o:Destroy() end
+	end
+end)
+
+---------------------------------------------------
+-- ANTI-KICK (перехват через метатаблицу)
+---------------------------------------------------
+
+pcall(function()
+	local _mt = getrawmetatable and getrawmetatable(game) or nil
+	if _mt then
+		local _old = _mt.__namecall
+		local _rw  = make_writeable and make_writeable or (function(t,v) setreadonly(t,v) end)
+		_rw(_mt, false)
+		_mt.__namecall = newcclosure(function(self, ...)
+			local method = getnamecallmethod and getnamecallmethod() or ""
+			if method == "Kick" and self == _lp then
+				return
+			end
+			return _old(self, ...)
+		end)
+		_rw(_mt, true)
+	else
+		-- Fallback: прямое переопределение
+		_lp.Kick = function() end
+	end
+end)
+
+-- Дополнительный мониторинг кика
+_s1.PlayerRemoving:Connect(function(p)
+	if p == _lp then
+		pcall(function() _lp:LoadCharacter() end)
+	end
+end)
+
+---------------------------------------------------
+-- ANTI-DETECT (рандомная задержка + fake activity)
+---------------------------------------------------
+
+task.wait(math.random(300, 1200) / 1000)
+
+local _fd = 0
+task.spawn(function()
+	while true do
+		_fd = (_fd + 1) % 999983
+		task.wait(math.random(800, 3000) / 1000)
+	end
+end)
+
+local _fm = {}
+for _i = 1, math.random(20, 40) do _fm[_i] = math.random() end
+task.spawn(function()
+	while true do
+		_fm[math.random(1, #_fm)] = math.sin(tick()) * math.cos(tick() * 0.7)
+		task.wait(math.random(400, 1500) / 1000)
+	end
+end)
+
+---------------------------------------------------
+-- ANTI-BAN (проверка разработчиков)
+---------------------------------------------------
+
+local _ESPEnabled = false -- объявляем заранее для доступа из anti-ban
+
+task.spawn(function()
+	while true do
+		pcall(function()
+			for _, p in ipairs(_s1:GetPlayers()) do
+				if p ~= _lp then
+					local ok, rank = pcall(function()
+						return p:GetRankInGroup(game.CreatorId)
+					end)
+					if ok and rank and rank >= 200 then
+						_ESPEnabled = false
+					end
+				end
+			end
+		end)
+		task.wait(8 + math.random(0, 4))
+	end
+end)
+
+---------------------------------------------------
+-- NOTIFICATION
+---------------------------------------------------
+
+local _ng = Instance.new("ScreenGui")
+_ng.Name = "GrapeBSN"
+_ng.ResetOnSpawn = false
+_ng.Parent = _s3
+
+local function _notif(txt, on)
+	for _, c in pairs(_ng:GetChildren()) do c:Destroy() end
+	local b = Instance.new("Frame")
+	b.Size = UDim2.new(0,180,0,50)
+	b.Position = UDim2.new(1,-195,1,-70)
+	b.BackgroundColor3 = on and Color3.fromRGB(30,30,30) or Color3.fromRGB(200,200,200)
+	b.BorderSizePixel = 0
+	b.Parent = _ng
+	local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0,25); bc.Parent = b
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1,0,1,0)
+	l.BackgroundTransparency = 1
+	l.Text = (on and "✓ " or "✗ ") .. txt
+	l.TextColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(50,50,50)
+	l.Font = Enum.Font.GothamBold; l.TextSize = 14; l.Parent = b
+	task.delay(2, function()
+		pcall(function()
+			for i = 1,10 do
+				b.BackgroundTransparency = i/10
+				l.TextTransparency = i/10
+				task.wait(0.05)
+			end
+			b:Destroy()
+		end)
+	end)
+end
+
+---------------------------------------------------
+-- SOUND
+---------------------------------------------------
+
+local function _snd(on)
+	local s = Instance.new("Sound")
+	s.SoundId = on and "rbxassetid://9119713951" or "rbxassetid://9119713960"
+	s.Volume = 0.5; s.Parent = workspace; s:Play()
+	_s4:AddItem(s, 2)
+end
+
+---------------------------------------------------
+-- ESP — ищем врагов в workspace папке
+---------------------------------------------------
+
+local _eg = Instance.new("ScreenGui")
+_eg.Name = "GrapeBSE"
+_eg.ResetOnSpawn = false
+_eg.Parent = _s3
+
+-- Blox Strike хранит врагов в папке workspace
+-- Пробуем несколько вариантов
+local function _getEnemyFolder()
+	local ws = workspace
+	-- Вариант 1: папка Characters
+	local f = ws:FindFirstChild("Characters")
+		or ws:FindFirstChild("Players")
+		or ws:FindFirstChild("Enemies")
+		or ws:FindFirstChild("Team1")
+		or ws:FindFirstChild("Team2")
+	if f then return f end
+	return nil
+end
+
+local function _getRoot(char)
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart")
+		or char:FindFirstChild("Torso")
+		or char:FindFirstChild("Head")
+end
+
+-- Команда игрока
+local function _isEnemy(model)
+	if not model or not model:IsA("Model") then return false end
+	-- Не наш персонаж
+	if model == _lp.Character then return false end
+	-- Проверяем Humanoid
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	-- Тим чек через Players
+	for _, p in pairs(_s1:GetPlayers()) do
+		if p.Character == model then
+			if p == _lp then return false end
+			if _lp.Team and p.Team and _lp.Team == p.Team then return false end
+			return true
+		end
+	end
+	-- Если модель не привязана к игроку — это NPC/враг
+	return true
+end
+
+local function _w2s(pos)
+	local sp = _cam:WorldToScreenPoint(pos)
+	return Vector2.new(sp.X, sp.Y), sp.Z > 0
+end
+
+local function _drawLine(x1,y1,x2,y2,col,thick)
+	local dx=x2-x1; local dy=y2-y1
+	local len=math.sqrt(dx*dx+dy*dy)
+	if len<1 then return end
+	local f=Instance.new("Frame")
+	f.BackgroundColor3=col; f.BorderSizePixel=0
+	f.Size=UDim2.new(0,len,0,thick or 2)
+	f.Position=UDim2.new(0,x1,0,y1)
+	f.Rotation=math.deg(math.atan2(dy,dx))
+	f.ZIndex=3; f.Parent=_eg
+end
+
+local function _drawBox(cx,cy,w,h,col)
+	_drawLine(cx-w/2,cy-h/2,cx+w/2,cy-h/2,col)
+	_drawLine(cx+w/2,cy-h/2,cx+w/2,cy+h/2,col)
+	_drawLine(cx+w/2,cy+h/2,cx-w/2,cy+h/2,col)
+	_drawLine(cx-w/2,cy+h/2,cx-w/2,cy-h/2,col)
+end
+
+local function _drawTxt(txt,col,x,y)
+	local l=Instance.new("TextLabel")
+	l.Size=UDim2.new(0,120,0,16)
+	l.Position=UDim2.new(0,x-60,0,y)
+	l.BackgroundColor3=Color3.new(0,0,0)
+	l.BackgroundTransparency=0.5
+	l.TextColor3=col; l.Font=Enum.Font.GothamBold
+	l.TextScaled=true; l.BorderSizePixel=0
+	l.ZIndex=4; l.Text=txt; l.Parent=_eg
+end
+
+_s2.RenderStepped:Connect(function()
+	pcall(function()
+		for _,c in pairs(_eg:GetChildren()) do c:Destroy() end
+		if not _ESPEnabled then return end
+		if not _lp.Character then return end
+		local myRoot = _getRoot(_lp.Character)
+		if not myRoot then return end
+
+		-- Ищем врагов двумя способами одновременно
+
+		-- Способ 1: через Players (стандарт)
+		for _, p in ipairs(_s1:GetPlayers()) do
+			if p ~= _lp and p.Character then
+				local hum = p.Character:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					if not (_lp.Team and p.Team and _lp.Team == p.Team) then
+						local root = _getRoot(p.Character)
+						if root then
+							local sp, vis = _w2s(root.Position)
+							if vis then
+								local dist = (root.Position - myRoot.Position).Magnitude
+								local pct = hum.Health / hum.MaxHealth
+								local col = Color3.fromRGB(0,220,0)
+								if pct < 0.5  then col = Color3.fromRGB(220,220,0) end
+								if pct < 0.25 then col = Color3.fromRGB(220,0,0) end
+								_drawBox(sp.X, sp.Y, 44, 65, col)
+								_drawTxt(p.Name, Color3.fromRGB(220,220,220), sp.X, sp.Y-52)
+								_drawTxt(string.format("HP %.0f", hum.Health), col, sp.X, sp.Y+36)
+								_drawTxt(string.format("%.0fm", dist), Color3.fromRGB(200,200,100), sp.X, sp.Y+52)
+							end
+						end
+					end
+				end
+			end
+		end
+
+		-- Способ 2: через workspace папку (для ботов/NPC)
+		local folder = _getEnemyFolder()
+		if folder then
+			for _, model in ipairs(folder:GetChildren()) do
+				if _isEnemy(model) then
+					local hum = model:FindFirstChildOfClass("Humanoid")
+					local root = _getRoot(model)
+					if hum and root then
+						local sp, vis = _w2s(root.Position)
+						if vis then
+							local dist = (root.Position - myRoot.Position).Magnitude
+							local pct = hum.Health / hum.MaxHealth
+							local col = Color3.fromRGB(0,220,0)
+							if pct < 0.5  then col = Color3.fromRGB(220,220,0) end
+							if pct < 0.25 then col = Color3.fromRGB(220,0,0) end
+							_drawBox(sp.X, sp.Y, 44, 65, col)
+							_drawTxt(model.Name, Color3.fromRGB(220,220,220), sp.X, sp.Y-52)
+							_drawTxt(string.format("HP %.0f", hum.Health), col, sp.X, sp.Y+36)
+							_drawTxt(string.format("%.0fm", dist), Color3.fromRGB(200,200,100), sp.X, sp.Y+52)
+						end
+					end
+				end
+			end
+		end
+	end)
+end)
+
+---------------------------------------------------
+-- FOV РУК (регулируемый)
+---------------------------------------------------
+
+local _fovEnabled = false
+local _fovValue   = 70  -- дефолт
+
+local function _applyFov(val)
+	pcall(function()
+		local cam = workspace.CurrentCamera
+		if cam then
+			cam.FieldOfView = val
+		end
+	end)
+end
+
+local function _resetFov()
+	pcall(function()
+		local cam = workspace.CurrentCamera
+		if cam then cam.FieldOfView = 70 end
+	end)
+end
+
+_s2.RenderStepped:Connect(function()
+	if _fovEnabled then
+		_applyFov(_fovValue)
+	end
+end)
+
+---------------------------------------------------
+-- GUI MENU
+---------------------------------------------------
+
+local _sg = Instance.new("ScreenGui")
+_sg.Name = "GrapeBS"
+_sg.ResetOnSpawn = false
+_sg.Parent = _s3
+
+local _main = Instance.new("Frame")
+_main.Size = UDim2.new(0,300,0,440)
+_main.Position = UDim2.new(0.5,-150,0.5,-220)
+_main.BackgroundColor3 = Color3.fromRGB(245,245,245)
+_main.BorderSizePixel = 0
+_main.Active = true; _main.Draggable = true
+_main.ClipsDescendants = true
+_main.Parent = _sg
+
+local _mc = Instance.new("UICorner"); _mc.CornerRadius = UDim.new(0,16); _mc.Parent = _main
+
+local _sh = Instance.new("Frame")
+_sh.Size = UDim2.new(1,8,1,8); _sh.Position = UDim2.new(0,-4,0,3)
+_sh.BackgroundColor3 = Color3.fromRGB(190,190,190); _sh.BorderSizePixel = 0
+_sh.ZIndex = 0; _sh.Parent = _main
+local _sc = Instance.new("UICorner"); _sc.CornerRadius = UDim.new(0,18); _sc.Parent = _sh
+
+-- TOP BAR
+local _tb = Instance.new("Frame")
+_tb.Size = UDim2.new(1,0,0,50)
+_tb.BackgroundColor3 = Color3.fromRGB(248,248,248)
+_tb.BorderSizePixel = 0; _tb.Parent = _main
+
+local function _dot(col, x)
+	local d = Instance.new("Frame")
+	d.Size = UDim2.new(0,13,0,13)
+	d.Position = UDim2.new(0,x,0.5,-6)
+	d.BackgroundColor3 = col; d.BorderSizePixel = 0; d.Parent = _tb
+	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(1,0); c.Parent = d
+end
+
+_dot(Color3.fromRGB(255,95,86),  14)
+_dot(Color3.fromRGB(255,189,46), 33)
+_dot(Color3.fromRGB(39,201,63),  52)
+
+local _arr = Instance.new("TextButton")
+_arr.Size = UDim2.new(0,32,0,32); _arr.Position = UDim2.new(1,-42,0.5,-16)
+_arr.BackgroundTransparency = 1; _arr.Text = "‹"
+_arr.TextColor3 = Color3.fromRGB(80,80,80)
+_arr.Font = Enum.Font.GothamBold; _arr.TextSize = 24; _arr.Parent = _tb
+
+local _ttl = Instance.new("TextLabel")
+_ttl.Size = UDim2.new(1,-90,1,0); _ttl.Position = UDim2.new(0,78,0,0)
+_ttl.BackgroundTransparency = 1; _ttl.Text = "Grape"
+_ttl.TextColor3 = Color3.fromRGB(40,40,40)
+_ttl.Font = Enum.Font.GothamBold; _ttl.TextSize = 18
+_ttl.TextXAlignment = Enum.TextXAlignment.Left; _ttl.Parent = _tb
+
+local _div = Instance.new("Frame")
+_div.Size = UDim2.new(1,0,0,1); _div.Position = UDim2.new(0,0,0,50)
+_div.BackgroundColor3 = Color3.fromRGB(220,220,220)
+_div.BorderSizePixel = 0; _div.Parent = _main
+
+local _ct = Instance.new("Frame")
+_ct.Size = UDim2.new(1,0,1,-51); _ct.Position = UDim2.new(0,0,0,51)
+_ct.BackgroundTransparency = 1; _ct.Parent = _main
+
+-- TABS
+local _tbar = Instance.new("Frame")
+_tbar.Size = UDim2.new(1,-20,0,36); _tbar.Position = UDim2.new(0,10,0,10)
+_tbar.BackgroundColor3 = Color3.fromRGB(230,230,230)
+_tbar.BorderSizePixel = 0; _tbar.Parent = _ct
+local _tbc = Instance.new("UICorner"); _tbc.CornerRadius = UDim.new(0,10); _tbc.Parent = _tbar
+
+local _tind = Instance.new("Frame")
+_tind.Size = UDim2.new(0.5,-4,1,-6); _tind.Position = UDim2.new(0,3,0,3)
+_tind.BackgroundColor3 = Color3.fromRGB(255,255,255)
+_tind.BorderSizePixel = 0; _tind.Parent = _tbar
+local _tic = Instance.new("UICorner"); _tic.CornerRadius = UDim.new(0,8); _tic.Parent = _tind
+
+local function _tabBtn(txt, xs)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0.5,0,1,0); b.Position = UDim2.new(xs,0,0,0)
+	b.BackgroundTransparency = 1; b.Text = txt
+	b.TextColor3 = Color3.fromRGB(120,120,120)
+	b.Font = Enum.Font.GothamBold; b.TextSize = 13; b.Parent = _tbar
+	return b
+end
+
+local _visBtn = _tabBtn("Visual", 0)
+local _authBtn = _tabBtn("Author", 0.5)
+_visBtn.TextColor3 = Color3.fromRGB(40,40,40)
+
+local function _panel()
+	local p = Instance.new("Frame")
+	p.Size = UDim2.new(1,-20,1,-56); p.Position = UDim2.new(0,10,0,56)
+	p.BackgroundTransparency = 1; p.Visible = false; p.Parent = _ct
+	return p
+end
+
+local _vp = _panel(); _vp.Visible = true
+local _ap = _panel()
+
+-- HELPERS
+local function _hdr(par, txt, y)
+	local h = Instance.new("TextLabel")
+	h.Size = UDim2.new(1,0,0,18); h.Position = UDim2.new(0,4,0,y)
+	h.BackgroundTransparency = 1; h.Text = txt
+	h.TextColor3 = Color3.fromRGB(150,150,150)
+	h.Font = Enum.Font.GothamBold; h.TextSize = 11
+	h.TextXAlignment = Enum.TextXAlignment.Left; h.Parent = par
+end
+
+local _vp = _panel(); _vp.Visible = true
+local _ap = _panel()
+
+-- HELPERS
+local function _hdr(par, txt, y)
+	local h = Instance.new("TextLabel")
+	h.Size = UDim2.new(1,0,0,18); h.Position = UDim2.new(0,4,0,y)
+	h.BackgroundTransparency = 1; h.Text = txt
+	h.TextColor3 = Color3.fromRGB(150,150,150)
+	h.Font = Enum.Font.GothamBold; h.TextSize = 11
+	h.TextXAlignment = Enum.TextXAlignment.Left; h.Parent = par
+end
+
+local function _toggle(par, lbl, ntxt, y, onE, onD)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1,0,0,52); row.Position = UDim2.new(0,0,0,y)
+	row.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	row.BorderSizePixel = 0; row.Parent = par
+	local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0,12); rc.Parent = row
+
+	local ll = Instance.new("TextLabel")
+	ll.Size = UDim2.new(1,-70,1,0); ll.Position = UDim2.new(0,14,0,0)
+	ll.BackgroundTransparency = 1; ll.Text = lbl
+	ll.TextColor3 = Color3.fromRGB(40,40,40); ll.Font = Enum.Font.Gotham
+	ll.TextSize = 15; ll.TextXAlignment = Enum.TextXAlignment.Left; ll.Parent = row
+
+	local sw = Instance.new("Frame")
+	sw.Size = UDim2.new(0,46,0,26); sw.Position = UDim2.new(1,-58,0.5,-13)
+	sw.BackgroundColor3 = Color3.fromRGB(210,210,210)
+	sw.BorderSizePixel = 0; sw.Parent = row
+	local swc = Instance.new("UICorner"); swc.CornerRadius = UDim.new(1,0); swc.Parent = sw
+
+	local kn = Instance.new("Frame")
+	kn.Size = UDim2.new(0,20,0,20); kn.Position = UDim2.new(0,3,0.5,-10)
+	kn.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	kn.BorderSizePixel = 0; kn.Parent = sw
+	local knc = Instance.new("UICorner"); knc.CornerRadius = UDim.new(1,0); knc.Parent = kn
+
+	local en = false
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1,0,1,0); btn.BackgroundTransparency = 1
+	btn.Text = ""; btn.Parent = row
+
+	btn.MouseButton1Click:Connect(function()
+		en = not en
+		if en then
+			sw.BackgroundColor3 = Color3.fromRGB(30,30,30)
+			kn.Position = UDim2.new(1,-23,0.5,-10)
+			_snd(true); _notif(ntxt, true)
+			if onE then onE() end
+		else
+			sw.BackgroundColor3 = Color3.fromRGB(210,210,210)
+			kn.Position = UDim2.new(0,3,0.5,-10)
+			_snd(false); _notif(ntxt, false)
+			if onD then onD() end
+		end
+	end)
+
+	return row, function() return en end
+end
+
+-- FOV SLIDER
+local function _makeFovSlider(par, y)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1,0,0,70); frame.Position = UDim2.new(0,0,0,y)
+	frame.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	frame.BorderSizePixel = 0; frame.Parent = par
+	local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0,12); fc.Parent = frame
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1,-80,0,24); title.Position = UDim2.new(0,14,0,8)
+	title.BackgroundTransparency = 1; title.Text = "FOV рук"
+	title.TextColor3 = Color3.fromRGB(40,40,40); title.Font = Enum.Font.Gotham
+	title.TextSize = 15; title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+	local valLbl = Instance.new("TextLabel")
+	valLbl.Size = UDim2.new(0,60,0,24); valLbl.Position = UDim2.new(1,-74,0,8)
+	valLbl.BackgroundTransparency = 1; valLbl.Text = tostring(_fovValue)
+	valLbl.TextColor3 = Color3.fromRGB(100,100,100); valLbl.Font = Enum.Font.GothamBold
+	valLbl.TextSize = 14; valLbl.Parent = frame
+
+	-- Полоска слайдера
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1,-28,0,8); track.Position = UDim2.new(0,14,0,44)
+	track.BackgroundColor3 = Color3.fromRGB(210,210,210)
+	track.BorderSizePixel = 0; track.Parent = frame
+	local trc = Instance.new("UICorner"); trc.CornerRadius = UDim.new(1,0); trc.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new((_fovValue-30)/90, 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(30,30,30)
+	fill.BorderSizePixel = 0; fill.Parent = track
+	local flc = Instance.new("UICorner"); flc.CornerRadius = UDim.new(1,0); flc.Parent = fill
+
+	local thumb = Instance.new("TextButton")
+	thumb.Size = UDim2.new(0,18,0,18)
+	thumb.Position = UDim2.new((_fovValue-30)/90, -9, 0.5, -9)
+	thumb.BackgroundColor3 = Color3.fromRGB(255,255,255)
+	thumb.BorderSizePixel = 0; thumb.Text = ""; thumb.Parent = track
+	local thc = Instance.new("UICorner"); thc.CornerRadius = UDim.new(1,0); thc.Parent = thumb
+
+	-- Drag слайдера
+	local dragging = false
+
+	thumb.InputBegan:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch
+		or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+		end
+	end)
+
+	_s5.InputEnded:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch
+		or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+		end
+	end)
+
+	_s5.InputChanged:Connect(function(inp)
+		if not dragging then return end
+		if inp.UserInputType ~= Enum.UserInputType.Touch
+		and inp.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+		pcall(function()
+			local abs = track.AbsolutePosition
+			local sz  = track.AbsoluteSize
+			local px  = inp.Position.X
+			local pct = math.clamp((px - abs.X) / sz.X, 0, 1)
+			_fovValue = math.floor(30 + pct * 90) -- диапазон 30–120
+			valLbl.Text = tostring(_fovValue)
+			fill.Size = UDim2.new(pct, 0, 1, 0)
+			thumb.Position = UDim2.new(pct, -9, 0.5, -9)
+			if _fovEnabled then _applyFov(_fovValue) end
+		end)
+	end)
+end
+
+---------------------------------------------------
+-- VISUAL PANEL
+---------------------------------------------------
+
+_hdr(_vp, "ESP", 0)
+_toggle(_vp, "ESP игроков", "ESP игроков", 22,
+	function() _ESPEnabled = true end,
+	function()
+		_ESPEnabled = false
+		for _,c in pairs(_eg:GetChildren()) do c:Destroy() end
+	end
+)
+
+_hdr(_vp, "FOV", 84)
+_toggle(_vp, "FOV рук", "FOV рук", 106,
+	function() _fovEnabled = true; _applyFov(_fovValue) end,
+	function() _fovEnabled = false; _resetFov() end
+)
+_makeFovSlider(_vp, 168)
+
+---------------------------------------------------
+-- AUTHOR PANEL
+---------------------------------------------------
+
+local _an = Instance.new("TextLabel")
+_an.Size = UDim2.new(1,0,0,50); _an.Position = UDim2.new(0,0,0.35,0)
+_an.BackgroundTransparency = 1; _an.Text = "👁️Batter"
+_an.TextColor3 = Color3.fromRGB(30,30,30)
+_an.Font = Enum.Font.GothamBold; _an.TextSize = 22; _an.Parent = _ap
+
+local _at = Instance.new("TextLabel")
+_at.Size = UDim2.new(1,0,0,30); _at.Position = UDim2.new(0,0,0.55,0)
+_at.BackgroundTransparency = 1; _at.Text = "🗾TG:EvoBatter"
+_at.TextColor3 = Color3.fromRGB(100,100,100)
+_at.Font = Enum.Font.Gotham; _at.TextSize = 16; _at.Parent = _ap
+
+---------------------------------------------------
+-- TAB LOGIC
+---------------------------------------------------
+
+local function _switch(tab)
+	_vp.Visible  = (tab=="vis")
+	_ap.Visible  = (tab=="auth")
+	_visBtn.TextColor3  = Color3.fromRGB(120,120,120)
+	_authBtn.TextColor3 = Color3.fromRGB(120,120,120)
+	if tab=="vis" then
+		_tind.Position = UDim2.new(0,3,0,3)
+		_visBtn.TextColor3 = Color3.fromRGB(40,40,40)
+	else
+		_tind.Position = UDim2.new(0.5,1,0,3)
+		_authBtn.TextColor3 = Color3.fromRGB(40,40,40)
+	end
+end
+
+_visBtn.MouseButton1Click:Connect(function()  _switch("vis")  end)
+_authBtn.MouseButton1Click:Connect(function() _switch("auth") end)
+
+---------------------------------------------------
+-- COLLAPSE
+---------------------------------------------------
+
+local _col = false
+
+_arr.MouseButton1Click:Connect(function()
+	_col = not _col
+	if _col then
+		_main.Size = UDim2.new(0,300,0,51)
+		_ct.Visible = false; _arr.Text = "›"
+	else
+		_main.Size = UDim2.new(0,300,0,440)
+		_ct.Visible = true; _arr.Text = "‹"
+	end
+end)
+
+print("OK")
+
