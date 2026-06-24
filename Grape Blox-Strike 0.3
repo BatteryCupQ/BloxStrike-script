@@ -1,0 +1,595 @@
+-- ============ ЧАСТЬ 1: ESP, КОСТИ, NOCLIP, МЕНЮ ============
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+local ESP = {
+    Enabled = false,
+    TeamCheck = false,
+    SkeletonColor = Color3.fromRGB(255, 255, 255),
+    BoxColor = Color3.fromRGB(255, 0, 0),
+    TextColor = Color3.fromRGB(255, 255, 255),
+    TextSize = 18,
+}
+
+local espObjects = {}
+local espGui = Instance.new("ScreenGui")
+espGui.Name = "ESP_GUI"
+espGui.Parent = game.CoreGui
+
+function createLine()
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = ESP.SkeletonColor
+    line.BorderSizePixel = 0
+    line.AnchorPoint = Vector2.new(0, 0.5)
+    line.Size = UDim2.new(0, 0, 0, 2)
+    line.Visible = false
+    line.Parent = espGui
+    return line
+end
+
+function createESP(player)
+    local box = Instance.new("Frame")
+    box.BackgroundTransparency = 1
+    box.BorderSizePixel = 0
+    box.Visible = false
+    box.Parent = espGui
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = ESP.BoxColor
+    stroke.Thickness = 2
+    stroke.Parent = box
+
+    local distText = Instance.new("TextLabel")
+    distText.BackgroundTransparency = 1
+    distText.TextColor3 = ESP.TextColor
+    distText.Font = Enum.Font.SourceSansBold
+    distText.TextSize = ESP.TextSize
+    distText.TextStrokeTransparency = 0
+    distText.Visible = false
+    distText.Parent = espGui
+
+    local connections = {
+        {"Head","UpperTorso"},{"UpperTorso","LowerTorso"},
+        {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},
+        {"RightLowerArm","RightHand"},{"UpperTorso","LeftUpperArm"},
+        {"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
+        {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},
+        {"RightLowerLeg","RightFoot"},{"LowerTorso","LeftUpperLeg"},
+        {"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
+    }
+    local bones = {}
+    for _=1,#connections do table.insert(bones,{Line=createLine(),From=nil,To=nil}) end
+    espObjects[player] = {Box=box,Stroke=stroke,Text=distText,Bones=bones,Connections=connections}
+end
+
+function removeESP(player)
+    if espObjects[player] then
+        espObjects[player].Box:Destroy()
+        espObjects[player].Text:Destroy()
+        for _,b in ipairs(espObjects[player].Bones) do b.Line:Destroy() end
+        espObjects[player] = nil
+    end
+end
+
+local function isEnemy(p)
+    if not ESP.TeamCheck then return true end
+    local t; pcall(function() t = p.Team end)
+    if t and LocalPlayer.Team then return t ~= LocalPlayer.Team end
+    return true
+end
+
+function updateESP()
+    local lc = LocalPlayer.Character; if not lc then return end
+    local lr = lc:FindFirstChild("HumanoidRootPart"); if not lr then return end
+    for p,o in pairs(espObjects) do
+        local c = p.Character; if c and p~=LocalPlayer then
+            local h = c:FindFirstChild("Head")
+            local r = c:FindFirstChild("HumanoidRootPart")
+            local hm = c:FindFirstChildOfClass("Humanoid")
+            if r and h and hm and hm.Health>0 then
+                if isEnemy(p) then
+                    local rp,on = Camera:WorldToScreenPoint(r.Position)
+                    if on then
+                        local hp = Camera:WorldToScreenPoint(h.Position+Vector3.new(0,0.6,0))
+                        local fp = Camera:WorldToScreenPoint(r.Position-Vector3.new(0,2.7,0))
+                        local ht = math.abs(hp.Y-fp.Y); local wd = ht/1.8
+                        o.Box.Size = UDim2.new(0,wd,0,ht)
+                        o.Box.Position = UDim2.new(0,rp.X-wd/2,0,hp.Y)
+                        o.Box.Visible = true
+                        local dist = (r.Position-lr.Position).Magnitude
+                        o.Text.Text = string.format("%.0f m",dist)
+                        o.Text.Position = UDim2.new(0,rp.X,0,hp.Y-22)
+                        o.Text.Visible = true
+                        for i,conn in ipairs(o.Connections) do
+                            local pf = c:FindFirstChild(conn[1])
+                            local pt = c:FindFirstChild(conn[2])
+                            local bone = o.Bones[i]
+                            if pf and pt then
+                                local f = Camera:WorldToScreenPoint(pf.Position)
+                                local t = Camera:WorldToScreenPoint(pt.Position)
+                                if f.Z>0 and t.Z>0 then
+                                    local diff = Vector2.new(t.X-f.X,t.Y-f.Y)
+                                    local len = diff.Magnitude
+                                    if len>0 then
+                                        bone.Line.Size = UDim2.new(0,len,0,2)
+                                        bone.Line.Position = UDim2.new(0,f.X,0,f.Y)
+                                        bone.Line.Rotation = math.deg(math.atan2(diff.Y,diff.X))
+                                        bone.Line.Visible = true
+                                    else bone.Line.Visible=false end
+                                else bone.Line.Visible=false end
+                            else bone.Line.Visible=false end
+                        end
+                    else o.Box.Visible=false; o.Text.Visible=false; for _,b in ipairs(o.Bones) do b.Line.Visible=false end end
+                else o.Box.Visible=false; o.Text.Visible=false; for _,b in ipairs(o.Bones) do b.Line.Visible=false end end
+            else o.Box.Visible=false; o.Text.Visible=false; for _,b in ipairs(o.Bones) do b.Line.Visible=false end end
+        else o.Box.Visible=false; o.Text.Visible=false; for _,b in ipairs(o.Bones) do b.Line.Visible=false end end
+    end
+end
+
+-- NoClip
+local NoClip = false
+RunService.Stepped:Connect(function()
+    if NoClip and LocalPlayer.Character then
+        for _,v in ipairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=false end end
+    elseif LocalPlayer.Character then
+        for _,v in ipairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide=true end end
+    end
+end)
+
+-- Меню
+local menuGui = Instance.new("ScreenGui",game.CoreGui)
+menuGui.Name="MenuPart1"
+local main = Instance.new("Frame",menuGui)
+main.Size=UDim2.new(0,280,0,230); main.Position=UDim2.new(0.5,-140,0.5,-115)
+main.BackgroundColor3=Color3.new(1,1,1); main.BorderSizePixel=0; main.ClipsDescendants=true
+Instance.new("UICorner",main).CornerRadius=UDim.new(0,16)
+local title=Instance.new("Frame",main)
+title.Size=UDim2.new(1,0,0,35); title.BackgroundColor3=Color3.new(0.95,0.95,0.95); title.BorderSizePixel=0
+Instance.new("UICorner",title).CornerRadius=UDim.new(0,16)
+
+local function dot(x,c,cb)
+    local d=Instance.new("TextButton",title)
+    d.Size=UDim2.new(0,18,0,18); d.Position=UDim2.new(0,x,0.5,-9)
+    d.BackgroundColor3=c; d.Text=""; d.BorderSizePixel=0
+    Instance.new("UICorner",d).CornerRadius=UDim.new(1,0)
+    if cb then d.MouseButton1Click:Connect(cb) end
+    return d
+end
+dot(15,Color3.fromRGB(255,95,87),function() main.Visible=false end)
+dot(40,Color3.fromRGB(255,189,46))
+dot(65,Color3.fromRGB(40,202,65))
+
+local tabF=Instance.new("Frame",main)
+tabF.Size=UDim2.new(1,0,0,32); tabF.Position=UDim2.new(0,0,0,35)
+tabF.BackgroundColor3=Color3.new(0.9,0.9,0.9); tabF.BorderSizePixel=0
+
+local tabs,cont={},{}
+local function addTab(name)
+    local btn=Instance.new("TextButton",tabF)
+    btn.Size=UDim2.new(1/3,0,1,0); btn.Position=UDim2.new(#tabs/3,0,0,0)
+    btn.BackgroundColor3=Color3.new(0.85,0.85,0.85); btn.Text=name
+    btn.TextColor3=Color3.new(0,0,0); btn.Font=Enum.Font.SourceSansBold; btn.TextSize=14; btn.BorderSizePixel=0
+    local con=Instance.new("Frame",main)
+    con.Size=UDim2.new(1,0,1,-67); con.Position=UDim2.new(0,0,0,67)
+    con.BackgroundColor3=Color3.new(1,1,1); con.BorderSizePixel=0; con.Visible=#tabs==0
+    table.insert(tabs,btn); table.insert(cont,con)
+    return btn,con
+end
+local vBtn,vCon=addTab("Visuals")
+local mBtn,mCon=addTab("Misc")
+local aBtn,aCon=addTab("Author")
+for i,b in ipairs(tabs) do
+    b.MouseButton1Click:Connect(function()
+        for j,o in ipairs(tabs) do
+            o.BackgroundColor3=j==i and Color3.new(0.85,0.85,0.85) or Color3.new(0.9,0.9,0.9)
+            cont[j].Visible=j==i
+        end
+    end)
+end
+
+local function createToggle(parent,text,def,cb)
+    local f=Instance.new("Frame",parent)
+    f.Size=UDim2.new(1,-20,0,30); f.Position=UDim2.new(0,10,0,15+(#parent:GetChildren()-1)*35)
+    f.BackgroundColor3=Color3.new(1,1,1); f.BorderSizePixel=0
+    local check=Instance.new("TextButton",f)
+    check.Size=UDim2.new(0,24,0,24); check.Position=UDim2.new(0,0,0.5,-12)
+    check.BackgroundColor3=Color3.new(0.8,0.8,0.8); check.Text=""; check.BorderSizePixel=0
+    Instance.new("UICorner",check).CornerRadius=UDim.new(0,4)
+    local fill=Instance.new("Frame",check)
+    fill.Size=UDim2.new(0.6,0,0.6,0); fill.Position=UDim2.new(0.2,0,0.2,0)
+    fill.BackgroundColor3=Color3.new(0,0,0); fill.Visible=def; fill.BorderSizePixel=0
+    local lbl=Instance.new("TextLabel",f)
+    lbl.Size=UDim2.new(1,-35,1,0); lbl.Position=UDim2.new(0,35,0,0)
+    lbl.BackgroundTransparency=1; lbl.Text=text; lbl.TextColor3=Color3.new(0,0,0)
+    lbl.TextSize=14; lbl.Font=Enum.Font.SourceSans; lbl.TextXAlignment=Enum.TextXAlignment.Left
+    local state=def
+    check.MouseButton1Click:Connect(function() state=not state; fill.Visible=state; cb(state) end)
+    return {Set=function(v) state=v; fill.Visible=v end}
+end
+
+createToggle(vCon,"ESP (рамка + кости + дист.)",false,function(v) ESP.Enabled=v end)
+createToggle(vCon,"TeamCheck",false,function(v) ESP.TeamCheck=v end)
+createToggle(mCon,"NoClip",false,function(v) NoClip=v end)
+
+local authorLbl=Instance.new("TextLabel",aCon)
+authorLbl.Size=UDim2.new(1,-30,0,40); authorLbl.Position=UDim2.new(0,15,0,25)
+authorLbl.BackgroundTransparency=1; authorLbl.Text="TGK @scr1ptstester"
+authorLbl.TextColor3=Color3.new(0,0,0); authorLbl.TextSize=20
+authorLbl.Font=Enum.Font.SourceSansBold; authorLbl.TextXAlignment=Enum.TextXAlignment.Center
+
+-- Перетаскивание
+local drag,ds,fs=false,nil,nil
+title.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch then
+        drag=true; ds=i.Position; fs=main.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if drag and i.UserInputType==Enum.UserInputType.Touch then
+        local d=i.Position-ds
+        main.Position=UDim2.new(fs.X.Scale,fs.X.Offset+d.X,fs.Y.Scale,fs.Y.Offset+d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.Touch then drag=false end
+end)
+
+UserInputService.InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode==Enum.KeyCode.Insert then main.Visible=not main.Visible end
+end)
+
+for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer then createESP(p) end end
+Players.PlayerAdded:Connect(function(p) if p~=LocalPlayer then createESP(p) end end)
+Players.PlayerRemoving:Connect(removeESP)
+RunService.RenderStepped:Connect(function()
+    if ESP.Enabled then updateESP() else
+        for _,o in pairs(espObjects) do
+            o.Box.Visible=false; o.Text.Visible=false
+            for _,b in ipairs(o.Bones) do b.Line.Visible=false end
+        end
+    end
+end)
+print("Часть 1 (ESP, NoClip) загружена.")
+-- ============ ЧАСТЬ 2: УНИКАЛЬНЫЙ SILENT AIM + МЕНЮ ============
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = workspace
+local Camera = Workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+local Aim = {
+    Enabled = false,
+    TeamCheck = false,
+    AimPart = "Head",
+    FOV = 200,
+    Smoothness = 1,
+    VisibilityCheck = true,  -- уникальная фича
+}
+
+-- Визуальный круг FOV (Drawing может не быть, используем ScreenGui)
+local aimGui = Instance.new("ScreenGui", game.CoreGui)
+aimGui.Name = "Aim_GUI"
+
+local fovCircle = Instance.new("Frame", aimGui)
+fovCircle.Size = UDim2.new(0, Aim.FOV*2, 0, Aim.FOV*2)
+fovCircle.Position = UDim2.new(0.5, -Aim.FOV, 0.5, -Aim.FOV)
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+local stroke = Instance.new("UIStroke", fovCircle)
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Thickness = 1
+local corner = Instance.new("UICorner", fovCircle)
+corner.CornerRadius = UDim.new(1, 0)  -- круг
+
+local targetDot = Instance.new("Frame", aimGui)
+targetDot.Size = UDim2.new(0, 10, 0, 10)
+targetDot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+targetDot.BorderSizePixel = 0
+targetDot.Visible = false
+local dotCorner = Instance.new("UICorner", targetDot)
+dotCorner.CornerRadius = UDim.new(1, 0)
+
+-- Функция проверки видимости (raycast от камеры до цели)
+local function isVisible(targetPart)
+    if not Aim.VisibilityCheck then return true end
+    local origin = Camera.CFrame.Position
+    local dir = (targetPart.Position - origin).Unit * (targetPart.Position - origin).Magnitude
+    local ray = Ray.new(origin, dir)
+    local hit = Workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
+    if hit then
+        -- проверяем, принадлежит ли hit персонажу цели
+        local char = targetPart.Parent
+        return char and hit:IsDescendantOf(char)
+    end
+    return false
+end
+
+local function getClosestPlayerInFOV()
+    local mousePos = Camera.ViewportSize / 2
+    local closest = nil
+    local minDist = Aim.FOV
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local char = p.Character
+            local aimPart = char:FindFirstChild(Aim.AimPart)
+            if not aimPart then aimPart = char:FindFirstChild("Head") end
+            if aimPart then
+                local pos, onScreen = Camera:WorldToScreenPoint(aimPart.Position)
+                if onScreen then
+                    local dist = (Vector2.new(pos.X, pos.Y) - mousePos).Magnitude
+                    if dist < minDist then
+                        -- проверка команды
+                        if not Aim.TeamCheck or (function()
+                            local t; pcall(function() t = p.Team end)
+                            return t and LocalPlayer.Team and t ~= LocalPlayer.Team
+                        end)() or not Aim.TeamCheck then
+                            -- проверка видимости
+                            if isVisible(aimPart) then
+                                closest = p
+                                minDist = dist
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- обновляем точку цели
+    if closest then
+        local ap = closest.Character:FindFirstChild(Aim.AimPart)
+        if ap then
+            local sp = Camera:WorldToScreenPoint(ap.Position)
+            targetDot.Position = UDim2.new(0, sp.X-5, 0, sp.Y-5)
+            targetDot.Visible = true
+        else
+            targetDot.Visible = false
+        end
+    else
+        targetDot.Visible = false
+    end
+    return closest
+end
+
+-- Перехват RemoteEvent для оружия
+local weaponRemote = nil
+local oldFireServer = nil
+
+local function findWeaponRemote()
+    for _, v in ipairs(game:GetDescendants()) do
+        if v:IsA("RemoteEvent") then
+            local n = v.Name:lower()
+            if n:find("shoot") or n:find("fire") or n:find("bullet") or n:find("weapon") then
+                return v
+            end
+        end
+    end
+    local rs = game:GetService("ReplicatedStorage")
+    for _, v in ipairs(rs:GetDescendants()) do
+        if v:IsA("RemoteEvent") then return v end
+    end
+    return nil
+end
+
+local function setupSilentAim()
+    weaponRemote = findWeaponRemote()
+    if not weaponRemote then
+        warn("Не найден RemoteEvent для оружия. Silent Aim не запущен.")
+        return
+    end
+    oldFireServer = hookfunction(weaponRemote.FireServer, function(self, ...)
+        local args = {...}
+        if Aim.Enabled then
+            local target = getClosestPlayerInFOV()
+            if target and target.Character then
+                local aimPart = target.Character:FindFirstChild(Aim.AimPart) or target.Character:FindFirstChild("Head")
+                if aimPart then
+                    -- ожидаем, что аргументы: origin (Vector3), direction (Vector3)
+                    if #args >= 2 and typeof(args[1])=="Vector3" and typeof(args[2])=="Vector3" then
+                        local origin = args[1]
+                        local targetPos = aimPart.Position
+                        local newDir = (targetPos - origin).Unit
+                        if Aim.Smoothness > 1 then
+                            local oldDir = args[2]
+                            args[2] = oldDir:Lerp(newDir, 1/Aim.Smoothness)
+                        else
+                            args[2] = newDir
+                        end
+                    end
+                end
+            end
+        end
+        return oldFireServer(self, unpack(args))
+    end)
+    print("Silent Aim привязан к:", weaponRemote:GetFullName())
+end
+
+spawn(function() wait(2); setupSilentAim() end)
+
+-- Меню для Aim
+local menuAim = Instance.new("ScreenGui", game.CoreGui)
+menuAim.Name = "AimMenu"
+local mainAim = Instance.new("Frame", menuAim)
+mainAim.Size = UDim2.new(0, 260, 0, 230)
+mainAim.Position = UDim2.new(0.5, -130, 0.8, -115)
+mainAim.BackgroundColor3 = Color3.new(1, 1, 1)
+mainAim.BorderSizePixel = 0
+mainAim.ClipsDescendants = true
+Instance.new("UICorner", mainAim).CornerRadius = UDim.new(0, 16)
+
+local titleAim = Instance.new("Frame", mainAim)
+titleAim.Size = UDim2.new(1, 0, 0, 35)
+titleAim.BackgroundColor3 = Color3.new(0.95, 0.95, 0.95)
+titleAim.BorderSizePixel = 0
+Instance.new("UICorner", titleAim).CornerRadius = UDim.new(0, 16)
+
+local function dotAim(x, c, cb)
+    local d = Instance.new("TextButton", titleAim)
+    d.Size = UDim2.new(0, 18, 0, 18)
+    d.Position = UDim2.new(0, x, 0.5, -9)
+    d.BackgroundColor3 = c; d.Text = ""; d.BorderSizePixel = 0
+    Instance.new("UICorner", d).CornerRadius = UDim.new(1, 0)
+    if cb then d.MouseButton1Click:Connect(cb) end
+    return d
+end
+dotAim(15, Color3.fromRGB(255, 95, 87), function() mainAim.Visible = false end)
+dotAim(40, Color3.fromRGB(255, 189, 46))
+dotAim(65, Color3.fromRGB(40, 202, 65))
+
+-- Содержимое Aim
+local contentAim = Instance.new("Frame", mainAim)
+contentAim.Size = UDim2.new(1, 0, 1, -35)
+contentAim.Position = UDim2.new(0, 0, 0, 35)
+contentAim.BackgroundColor3 = Color3.new(1, 1, 1)
+contentAim.BorderSizePixel = 0
+
+local function createToggleAim(parent, text, default, callback)
+    local f = Instance.new("Frame", parent)
+    f.Size = UDim2.new(1, -20, 0, 30)
+    f.Position = UDim2.new(0, 10, 0, 15 + (#parent:GetChildren() * 35))
+    f.BackgroundColor3 = Color3.new(1, 1, 1)
+    f.BorderSizePixel = 0
+    local check = Instance.new("TextButton", f)
+    check.Size = UDim2.new(0, 24, 0, 24)
+    check.Position = UDim2.new(0, 0, 0.5, -12)
+    check.BackgroundColor3 = Color3.new(0.8, 0.8, 0.8)
+    check.Text = ""; check.BorderSizePixel = 0
+    Instance.new("UICorner", check).CornerRadius = UDim.new(0, 4)
+    local fill = Instance.new("Frame", check)
+    fill.Size = UDim2.new(0.6, 0, 0.6, 0)
+    fill.Position = UDim2.new(0.2, 0, 0.2, 0)
+    fill.BackgroundColor3 = Color3.new(0, 0, 0)
+    fill.Visible = default; fill.BorderSizePixel = 0
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Size = UDim2.new(1, -35, 1, 0)
+    lbl.Position = UDim2.new(0, 35, 0, 0)
+    lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = Color3.new(0, 0, 0)
+    lbl.TextSize = 14; lbl.Font = Enum.Font.SourceSans; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local state = default
+    check.MouseButton1Click:Connect(function()
+        state = not state; fill.Visible = state; callback(state)
+    end)
+    return {Set = function(v) state = v; fill.Visible = v end}
+end
+
+createToggleAim(contentAim, "Silent Aim", false, function(v) Aim.Enabled = v end)
+createToggleAim(contentAim, "TeamCheck", false, function(v) Aim.TeamCheck = v end)
+createToggleAim(contentAim, "Visibility Check", true, function(v) Aim.VisibilityCheck = v end)
+
+-- Dropdown для части тела
+local function createDropdownAim(parent, text, options, default, callback)
+    local f = Instance.new("Frame", parent)
+    f.Size = UDim2.new(1, -20, 0, 30)
+    f.Position = UDim2.new(0, 10, 0, 15 + (#parent:GetChildren() * 35))
+    f.BackgroundColor3 = Color3.new(1, 1, 1)
+    f.BorderSizePixel = 0
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Size = UDim2.new(0, 90, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text; lbl.TextColor3 = Color3.new(0, 0, 0)
+    lbl.TextSize = 14; lbl.Font = Enum.Font.SourceSans; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local dd = Instance.new("TextButton", f)
+    dd.Size = UDim2.new(0, 120, 0, 24)
+    dd.Position = UDim2.new(1, -120, 0.5, -12)
+    dd.BackgroundColor3 = Color3.new(0.9, 0.9, 0.9)
+    dd.Text = default; dd.TextColor3 = Color3.new(0, 0, 0)
+    dd.Font = Enum.Font.SourceSans; dd.TextSize = 14; dd.BorderSizePixel = 0
+    Instance.new("UICorner", dd).CornerRadius = UDim.new(0, 4)
+    local sf = Instance.new("ScrollingFrame", dd)
+    sf.Size = UDim2.new(1, 0, 0, 120); sf.Position = UDim2.new(0, 0, 1, 2)
+    sf.BackgroundColor3 = Color3.new(0.95, 0.95, 0.95); sf.BorderSizePixel = 0
+    sf.Visible = false
+    Instance.new("UICorner", sf).CornerRadius = UDim.new(0, 4)
+    for i, opt in ipairs(options) do
+        local btn = Instance.new("TextButton", sf)
+        btn.Size = UDim2.new(1, -4, 0, 24); btn.Position = UDim2.new(0, 2, 0, (i-1)*24)
+        btn.BackgroundColor3 = Color3.new(1, 1, 1); btn.Text = opt
+        btn.TextColor3 = Color3.new(0, 0, 0); btn.Font = Enum.Font.SourceSans; btn.TextSize = 14; btn.BorderSizePixel = 0
+        btn.MouseButton1Click:Connect(function()
+            dd.Text = opt; sf.Visible = false; callback(opt)
+        end)
+    end
+    sf.CanvasSize = UDim2.new(0, 0, 0, #options * 24)
+    dd.MouseButton1Click:Connect(function()
+        sf.Visible = not sf.Visible
+    end)
+end
+
+createDropdownAim(contentAim, "Aim Part:", {"Head", "HumanoidRootPart", "LowerTorso", "UpperTorso", "RightFoot", "LeftFoot"}, "Head", function(part) Aim.AimPart = part end)
+
+-- Slider для FOV и Smooth
+local function createSliderAim(parent, text, min, max, default, callback)
+    local f = Instance.new("Frame", parent)
+    f.Size = UDim2.new(1, -20, 0, 30)
+    f.Position = UDim2.new(0, 10, 0, 15 + (#parent:GetChildren() * 35))
+    f.BackgroundColor3 = Color3.new(1, 1, 1); f.BorderSizePixel = 0
+    local lbl = Instance.new("TextLabel", f)
+    lbl.Size = UDim2.new(0, 80, 1, 0); lbl.BackgroundTransparency = 1
+    lbl.Text = text; lbl.TextColor3 = Color3.new(0, 0, 0)
+    lbl.TextSize = 14; lbl.Font = Enum.Font.SourceSans; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    local val = default
+    local valLbl = Instance.new("TextLabel", f)
+    valLbl.Size = UDim2.new(0, 40, 1, 0); valLbl.Position = UDim2.new(1, -85, 0, 0)
+    valLbl.BackgroundTransparency = 1; valLbl.Text = tostring(val); valLbl.TextColor3 = Color3.new(0, 0, 0)
+    valLbl.TextSize = 14; valLbl.Font = Enum.Font.SourceSans
+    local minus = Instance.new("TextButton", f)
+    minus.Size = UDim2.new(0, 20, 0, 20); minus.Position = UDim2.new(1, -40, 0.5, -10)
+    minus.Text = "-"; minus.BackgroundColor3 = Color3.new(0.8, 0.8, 0.8); minus.TextColor3 = Color3.new(0, 0, 0)
+    minus.Font = Enum.Font.SourceSansBold; minus.TextSize = 14; minus.BorderSizePixel = 0
+    Instance.new("UICorner", minus).CornerRadius = UDim.new(0, 4)
+    local plus = Instance.new("TextButton", f)
+    plus.Size = UDim2.new(0, 20, 0, 20); plus.Position = UDim2.new(1, -15, 0.5, -10)
+    plus.Text = "+"; plus.BackgroundColor3 = Color3.new(0.8, 0.8, 0.8); plus.TextColor3 = Color3.new(0, 0, 0)
+    plus.Font = Enum.Font.SourceSansBold; plus.TextSize = 14; plus.BorderSizePixel = 0
+    Instance.new("UICorner", plus).CornerRadius = UDim.new(0, 4)
+    local function update()
+        valLbl.Text = tostring(val); callback(val)
+        -- обновить круг FOV
+        if text == "FOV" then
+            fovCircle.Size = UDim2.new(0, val*2, 0, val*2)
+            fovCircle.Position = UDim2.new(0.5, -val, 0.5, -val)
+        end
+    end
+    minus.MouseButton1Click:Connect(function() val = math.max(min, val-5); update() end)
+    plus.MouseButton1Click:Connect(function() val = math.min(max, val+5); update() end)
+    update()
+    return {Set = function(v) val = v; update() end}
+end
+
+createSliderAim(contentAim, "FOV", 50, 500, 200, function(v) Aim.FOV = v end)
+createSliderAim(contentAim, "Smooth", 1, 10, 1, function(v) Aim.Smoothness = v end)
+
+-- Перетаскивание Aim меню
+local dragAim, dsAim, fsAim = false, nil, nil
+titleAim.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch then
+        dragAim = true; dsAim = i.Position; fsAim = mainAim.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if dragAim and i.UserInputType == Enum.UserInputType.Touch then
+        local d = i.Position - dsAim
+        mainAim.Position = UDim2.new(fsAim.X.Scale, fsAim.X.Offset+d.X, fsAim.Y.Scale, fsAim.Y.Offset+d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.Touch then dragAim = false end
+end)
+
+UserInputService.InputBegan:Connect(function(i,g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.Insert then
+        mainAim.Visible = not mainAim.Visible
+    end
+end)
+
+-- Показывать/скрывать круг FOV в зависимости от включения аима
+RunService.RenderStepped:Connect(function()
+    fovCircle.Visible = Aim.Enabled
+    if not Aim.Enabled then targetDot.Visible = false end
+end)
+
+print("Часть 2 (Уникальный Silent Aim) загружена.")
