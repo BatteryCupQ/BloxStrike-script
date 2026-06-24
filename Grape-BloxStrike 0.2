@@ -137,121 +137,144 @@ end
 
 ---------------------------------------------------
 -- ESP
--- Blox Strike хранит врагов в workspace
--- Ищем ВСЕ модели с Humanoid — не только Players
----------------------------------------------------
+-- ============ ESP ДЛЯ BLOX STRIKE ============
+local ESP_Config = {
+    Enabled = true,
+    BoxColor = Color3.fromRGB(255, 50, 50),
+    BoxThickness = 2,
+    TextColor = Color3.fromRGB(255, 255, 255),
+    TextSize = 18,
+    ToggleKey = Enum.KeyCode.RightControl,
+    ShowTeammates = false,
+}
 
-local _eg = Instance.new("ScreenGui")
-_eg.Name = "_GBE"; _eg.ResetOnSpawn = false; _eg.Parent = _CG
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
-local function _root(m)
-	if not m then return nil end
-	return m:FindFirstChild("HumanoidRootPart")
-		or m:FindFirstChild("Torso")
-		or m:FindFirstChild("Head")
+local HEAD_NAME = "Head"
+local ROOT_NAME = "HumanoidRootPart"
+
+local espObjects = {}
+
+local function createESP(player)
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Color = ESP_Config.BoxColor
+    box.Thickness = ESP_Config.BoxThickness
+    box.Filled = false
+
+    local distText = Drawing.new("Text")
+    distText.Visible = false
+    distText.Color = ESP_Config.TextColor
+    distText.Font = Drawing.Fonts.UI
+    distText.Size = ESP_Config.TextSize
+    distText.Center = true
+    distText.Outline = true
+    distText.OutlineColor = Color3.new(0, 0, 0)
+
+    espObjects[player] = {Box = box, Text = distText}
 end
 
--- Тим чек: возвращает true если это враг
-local function _isEnemy(model)
-	if not model or not model.Parent then return false end
-	if model == _lp.Character then return false end
-	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not hum or hum.Health <= 0 then return false end
-	-- Проверяем через Players
-	for _, p in pairs(_P:GetPlayers()) do
-		if p.Character == model then
-			if p == _lp then return false end
-			-- Тим чек
-			if _lp.Team and p.Team and _lp.Team == p.Team then
-				return false
-			end
-			return true
-		end
-	end
-	-- Если модель не принадлежит никакому игроку — пропускаем
-	-- (чтобы не рисовать рандомные объекты)
-	return false
+local function removeESP(player)
+    if espObjects[player] then
+        espObjects[player].Box:Remove()
+        espObjects[player].Text:Remove()
+        espObjects[player] = nil
+    end
 end
 
-local function _w2s(pos)
-	local s = _cam:WorldToScreenPoint(pos)
-	return Vector2.new(s.X, s.Y), s.Z > 0
+local function updateESP()
+    local localChar = LocalPlayer.Character
+    if not localChar then return end
+    local localRoot = localChar:FindFirstChild(ROOT_NAME)
+    if not localRoot then return end
+
+    for player, esp in pairs(espObjects) do
+        local char = player.Character
+        if not char or player == LocalPlayer then
+            esp.Box.Visible = false
+            esp.Text.Visible = false
+            continue
+        end
+
+        local head = char:FindFirstChild(HEAD_NAME)
+        local root = char:FindFirstChild(ROOT_NAME)
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+        if not (head and root and humanoid and humanoid.Health > 0) then
+            esp.Box.Visible = false
+            esp.Text.Visible = false
+            continue
+        end
+
+        if not ESP_Config.ShowTeammates and player.Team == LocalPlayer.Team then
+            esp.Box.Visible = false
+            esp.Text.Visible = false
+            continue
+        end
+
+        local rootPos, onScreen = Camera:WorldToScreenPoint(root.Position)
+        if not onScreen then
+            esp.Box.Visible = false
+            esp.Text.Visible = false
+            continue
+        end
+
+        local headPos = Camera:WorldToScreenPoint(head.Position + Vector3.new(0, 0.6, 0))
+        local feetPos = Camera:WorldToScreenPoint(root.Position - Vector3.new(0, 2.7, 0))
+
+        local height = math.abs(headPos.Y - feetPos.Y)
+        local width = height / 1.8
+        local boxX = rootPos.X - width / 2
+        local boxY = headPos.Y
+
+        esp.Box.Size = Vector2.new(width, height)
+        esp.Box.Position = Vector2.new(boxX, boxY)
+        esp.Box.Visible = true
+
+        local distance = (root.Position - localRoot.Position).Magnitude
+        esp.Text.Text = string.format("%.0f m", distance)
+        esp.Text.Position = Vector2.new(rootPos.X, headPos.Y - 22)
+        esp.Text.Visible = true
+    end
 end
 
-local function _ln(x1,y1,x2,y2,c,th)
-	local dx=x2-x1; local dy=y2-y1
-	local l=math.sqrt(dx*dx+dy*dy)
-	if l < 1 then return end
-	local f = Instance.new("Frame", _eg)
-	f.BackgroundColor3=c; f.BorderSizePixel=0
-	f.Size=UDim2.new(0,l,0,th or 2)
-	f.Position=UDim2.new(0,x1,0,y1)
-	f.Rotation=math.deg(math.atan2(dy,dx)); f.ZIndex=3
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        createESP(player)
+    end
 end
 
-local function _box(cx,cy,w,h,c)
-	_ln(cx-w/2,cy-h/2,cx+w/2,cy-h/2,c)
-	_ln(cx+w/2,cy-h/2,cx+w/2,cy+h/2,c)
-	_ln(cx+w/2,cy+h/2,cx-w/2,cy+h/2,c)
-	_ln(cx-w/2,cy+h/2,cx-w/2,cy-h/2,c)
-end
-
-local function _txt(t,c,x,y)
-	local l = Instance.new("TextLabel", _eg)
-	l.Size=UDim2.new(0,120,0,16); l.Position=UDim2.new(0,x-60,0,y)
-	l.BackgroundColor3=Color3.new(0,0,0); l.BackgroundTransparency=0.5
-	l.TextColor3=c; l.Font=Enum.Font.GothamBold
-	l.TextScaled=true; l.BorderSizePixel=0; l.ZIndex=4; l.Text=t
-end
-
-_RS.RenderStepped:Connect(function()
-	pcall(function()
-		for _, c in pairs(_eg:GetChildren()) do c:Destroy() end
-		if not _espOn then return end
-		if not _lp.Character then return end
-
-		local mr = _root(_lp.Character)
-		if not mr then return end
-
-		-- Сканируем ВСЕХ игроков
-		for _, p in ipairs(_P:GetPlayers()) do
-			if p == _lp then continue end
-			local char = p.Character
-			if not char then continue end
-
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if not hum or hum.Health <= 0 then continue end
-
-			-- Тим чек
-			if _lp.Team and p.Team and _lp.Team == p.Team then continue end
-
-			local root = _root(char)
-			if not root then continue end
-
-			local sp, vis = _w2s(root.Position)
-			if not vis then continue end
-
-			local dist = (root.Position - mr.Position).Magnitude
-			local pct  = hum.Health / math.max(hum.MaxHealth, 1)
-
-			local col = Color3.fromRGB(0, 220, 0)
-			if pct < 0.5  then col = Color3.fromRGB(220, 220, 0) end
-			if pct < 0.25 then col = Color3.fromRGB(220, 0,   0) end
-
-			-- Получаем высоту персонажа через Head
-			local head = char:FindFirstChild("Head")
-			local headSP = head and select(1, _w2s(head.Position)) or Vector2.new(sp.X, sp.Y - 30)
-			local bh = math.abs(sp.Y - headSP.Y) * 2.2
-			local bw = bh * 0.55
-
-			_box(sp.X, sp.Y - bh/4, math.max(bw, 30), math.max(bh, 50), col)
-			_txt(p.Name, Color3.fromRGB(220,220,220), sp.X, sp.Y - bh/4 - math.max(bh,50)/2 - 16)
-			_txt(string.format("%.0fHP", hum.Health), col, sp.X, sp.Y - bh/4 + math.max(bh,50)/2 + 2)
-			_txt(string.format("%.0fm", dist), Color3.fromRGB(200,200,100), sp.X, sp.Y - bh/4 + math.max(bh,50)/2 + 18)
-		end
-	end)
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        createESP(player)
+    end
 end)
 
+Players.PlayerRemoving:Connect(removeESP)
+
+RunService.RenderStepped:Connect(function()
+    if not ESP_Config.Enabled then
+        for _, esp in pairs(espObjects) do
+            esp.Box.Visible = false
+            esp.Text.Visible = false
+        end
+        return
+    end
+    updateESP()
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == ESP_Config.ToggleKey then
+        ESP_Config.Enabled = not ESP_Config.Enabled
+    end
+end)
+
+print("ESP replaced successfully! Toggle: RightControl")
 ---------------------------------------------------
 -- FOV РУК — БЕЗ ИЗМЕНЕНИЯ Camera.FieldOfView
 -- Масштабируем Arms модель вместо камеры
