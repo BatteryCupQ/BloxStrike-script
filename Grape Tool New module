@@ -1,0 +1,972 @@
+-- ============================================
+-- ЧАСТЬ 1: GRAPE Tool - Ядро и GUI
+-- Копируйте и вставьте ПЕРВОЙ
+-- ============================================
+
+-- SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- VARIABLES (глобальные для всех частей)
+_G.ESP = _G.ESP or {}
+_G.ESP.enabled = false
+_G.ESP.distance = 50
+_G.ESP.objects = {}
+_G.ESP.running = false
+
+local isMinimized = false
+local isDragging = false
+local dragStart = nil
+local dragStartPos = nil
+local isOpen = true
+local currentTab = "Main"
+
+-- THEMES
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    Accent = Color3.fromRGB(255, 0, 170),
+    AccentDark = Color3.fromRGB(200, 0, 130),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDim = Color3.fromRGB(150, 150, 150),
+    Border = Color3.fromRGB(40, 40, 40),
+    Hover = Color3.fromRGB(30, 30, 30),
+}
+
+-- UTILITY
+local function getUI()
+    return gethui and gethui() or CoreGui
+end
+
+local function createTween(obj, props, duration, style)
+    style = style or Enum.EasingStyle.Quad
+    local tween = TweenService:Create(obj, TweenInfo.new(duration or 0.3, style, Enum.EasingDirection.Out), props)
+    tween:Play()
+    return tween
+end
+
+-- MAIN GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GRAPE_Tool"
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = getUI()
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 600, 0, 450)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -225)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local Shadow = Instance.new("Frame")
+Shadow.Name = "Shadow"
+Shadow.Size = UDim2.new(1, 10, 1, 10)
+Shadow.Position = UDim2.new(0, -5, 0, -5)
+Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.BackgroundTransparency = 0.5
+Shadow.BorderSizePixel = 0
+Shadow.Parent = MainFrame
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = MainFrame
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Theme.Accent
+Stroke.Thickness = 1
+Stroke.Transparency = 0.8
+Stroke.Parent = MainFrame
+
+local Glow = Instance.new("Frame")
+Glow.Name = "Glow"
+Glow.Size = UDim2.new(1, 20, 1, 20)
+Glow.Position = UDim2.new(0, -10, 0, -10)
+Glow.BackgroundColor3 = Theme.Accent
+Glow.BackgroundTransparency = 0.95
+Glow.BorderSizePixel = 0
+Glow.Parent = MainFrame
+
+local GlowCorner = Instance.new("UICorner")
+GlowCorner.CornerRadius = UDim.new(0, 18)
+GlowCorner.Parent = Glow
+
+-- TOP BAR
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 35)
+TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+TopBar.BackgroundTransparency = 0.5
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 12)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0.5, 0, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "GRAPE Tool"
+Title.TextColor3 = Theme.Accent
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextWrapped = true
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Size = UDim2.new(0, 30, 1, 0)
+MinimizeBtn.Position = UDim2.new(1, -65, 0, 0)
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Text = "□"
+MinimizeBtn.TextColor3 = Theme.Text
+MinimizeBtn.TextScaled = true
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Parent = TopBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+CloseBtn.Position = UDim2.new(1, -35, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "—"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.TextScaled = true
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = TopBar
+
+-- CONTENT AREA
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+ContentFrame.Position = UDim2.new(0, 0, 0, 35)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- TAB SIDEBAR
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 150, 1, 0)
+Sidebar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+Sidebar.BackgroundTransparency = 0.3
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = ContentFrame
+
+local SideCorner = Instance.new("UICorner")
+SideCorner.CornerRadius = UDim.new(0, 12)
+SideCorner.Parent = Sidebar
+
+local TabList = Instance.new("UIListLayout")
+TabList.Padding = UDim.new(0, 5)
+TabList.FillDirection = Enum.FillDirection.Vertical
+TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+TabList.VerticalAlignment = Enum.VerticalAlignment.Top
+TabList.Parent = Sidebar
+
+local TabPadding = Instance.new("UIPadding")
+TabPadding.PaddingTop = UDim.new(0, 10)
+TabPadding.Parent = Sidebar
+
+-- PAGE AREA
+local PageFrame = Instance.new("Frame")
+PageFrame.Name = "PageFrame"
+PageFrame.Size = UDim2.new(1, -150, 1, 0)
+PageFrame.Position = UDim2.new(0, 150, 0, 0)
+PageFrame.BackgroundTransparency = 1
+PageFrame.Parent = ContentFrame
+
+local PageList = Instance.new("UIListLayout")
+PageList.Padding = UDim.new(0, 10)
+PageList.FillDirection = Enum.FillDirection.Vertical
+PageList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+PageList.VerticalAlignment = Enum.VerticalAlignment.Top
+PageList.Parent = PageFrame
+
+local PagePadding = Instance.new("UIPadding")
+PagePadding.PaddingTop = UDim.new(0, 10)
+PagePadding.PaddingLeft = UDim.new(0, 10)
+PagePadding.PaddingRight = UDim.new(0, 10)
+PagePadding.Parent = PageFrame
+
+-- TABS
+local Tabs = {}
+local Pages = {}
+local tabNames = {"Main", "Player", "Visual", "Combat", "Teleport", "Misc", "Settings"}
+
+for _, name in ipairs(tabNames) do
+    local btn = Instance.new("TextButton")
+    btn.Name = "Tab_" .. name
+    btn.Size = UDim2.new(0, 130, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    btn.BackgroundTransparency = 0.5
+    btn.BorderSizePixel = 0
+    btn.Text = name:upper()
+    btn.TextColor3 = Theme.TextDim
+    btn.TextScaled = true
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = Sidebar
+    
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+    
+    local page = Instance.new("Frame")
+    page.Name = "Page_" .. name
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = PageFrame
+    
+    Tabs[name] = btn
+    Pages[name] = page
+    
+    btn.MouseButton1Click:Connect(function()
+        currentTab = name
+        for tab, p in pairs(Pages) do
+            p.Visible = (tab == name)
+        end
+        for tab, b in pairs(Tabs) do
+            b.BackgroundTransparency = (tab == name) and 0.3 or 0.8
+            b.TextColor3 = (tab == name) and Theme.Accent or Theme.TextDim
+            if tab == name then
+                createTween(b, {BackgroundTransparency = 0.3}, 0.2)
+            else
+                createTween(b, {BackgroundTransparency = 0.8}, 0.2)
+            end
+        end
+    end)
+end
+
+Tabs["Main"].BackgroundTransparency = 0.3
+Tabs["Main"].TextColor3 = Theme.Accent
+Pages["Main"].Visible = true
+
+-- ELEMENTS CREATORS (доступны для всех частей)
+function CreateSection(parent, text)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, -10, 0, 30)
+    section.BackgroundTransparency = 1
+    section.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text:upper()
+    label.TextColor3 = Theme.Accent
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = section
+    
+    return section
+end
+
+function CreateLabel(parent, text)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+function CreateButton(parent, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    btn.BackgroundTransparency = 0.5
+    btn.BorderSizePixel = 0
+    btn.Text = text
+    btn.TextColor3 = Theme.Text
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Gotham
+    btn.Parent = parent
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    
+    btn.MouseEnter:Connect(function()
+        createTween(btn, {BackgroundTransparency = 0.2}, 0.15)
+        createTween(btn, {Size = UDim2.new(1, -6, 0, 34)}, 0.15)
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        createTween(btn, {BackgroundTransparency = 0.5}, 0.15)
+        createTween(btn, {Size = UDim2.new(1, -10, 0, 30)}, 0.15)
+    end)
+    
+    btn.MouseButton1Click:Connect(function()
+        createTween(btn, {Size = UDim2.new(1, -14, 0, 26)}, 0.1)
+        task.wait(0.1)
+        createTween(btn, {Size = UDim2.new(1, -10, 0, 30)}, 0.1)
+        if callback then callback() end
+    end)
+    
+    return btn
+end
+
+function CreateToggle(parent, text, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 30)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, 40, 0, 20)
+    toggle.Position = UDim2.new(1, -45, 0.5, -10)
+    toggle.BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(40, 40, 40)
+    toggle.BackgroundTransparency = 0.5
+    toggle.BorderSizePixel = 0
+    toggle.Text = ""
+    toggle.Parent = frame
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    toggleCorner.Parent = toggle
+    
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 14, 0, 14)
+    indicator.Position = default and UDim2.new(0, 24, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+    indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    indicator.BackgroundTransparency = 0.2
+    indicator.BorderSizePixel = 0
+    indicator.Parent = toggle
+    
+    local indCorner = Instance.new("UICorner")
+    indCorner.CornerRadius = UDim.new(1, 0)
+    indCorner.Parent = indicator
+    
+    local state = default or false
+    
+    toggle.MouseButton1Click:Connect(function()
+        state = not state
+        if state then
+            createTween(toggle, {BackgroundColor3 = Theme.Accent}, 0.2)
+            createTween(indicator, {Position = UDim2.new(0, 24, 0.5, -7)}, 0.2)
+        else
+            createTween(toggle, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, 0.2)
+            createTween(indicator, {Position = UDim2.new(0, 2, 0.5, -7)}, 0.2)
+        end
+        if callback then callback(state) end
+    end)
+    
+    return toggle, state
+end
+
+function CreateSlider(parent, text, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 50)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 0.4, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.3, 0, 0.4, 0)
+    valueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(default)
+    valueLabel.TextColor3 = Theme.Accent
+    valueLabel.TextScaled = true
+    valueLabel.Font = Enum.Font.Gotham
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = frame
+    
+    local slider = Instance.new("Frame")
+    slider.Size = UDim2.new(1, 0, 0.3, 0)
+    slider.Position = UDim2.new(0, 0, 0.6, 0)
+    slider.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    slider.BackgroundTransparency = 0.5
+    slider.BorderSizePixel = 0
+    slider.Parent = frame
+    
+    local sliderCorner = Instance.new("UICorner")
+    sliderCorner.CornerRadius = UDim.new(1, 0)
+    sliderCorner.Parent = slider
+    
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Accent
+    fill.BackgroundTransparency = 0.5
+    fill.BorderSizePixel = 0
+    fill.Parent = slider
+    
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+    
+    local value = default
+    
+    local function updateSlider(input)
+        local pos = math.clamp((input.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X, 0, 1)
+        value = min + (max - min) * pos
+        value = math.floor(value)
+        fill.Size = UDim2.new(pos, 0, 1, 0)
+        valueLabel.Text = tostring(value)
+        if callback then callback(value) end
+    end
+    
+    slider.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            updateSlider(input)
+        end
+    end)
+    
+    slider.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or 
+               UserInputService:IsTouchEnabled() then
+                updateSlider(input)
+            end
+        end
+    end)
+    
+    return slider, value
+end
+
+function CreateDropdown(parent, text, options, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.3, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local dropdown = Instance.new("TextButton")
+    dropdown.Size = UDim2.new(0.6, 0, 1, 0)
+    dropdown.Position = UDim2.new(0.4, 0, 0, 0)
+    dropdown.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    dropdown.BackgroundTransparency = 0.5
+    dropdown.BorderSizePixel = 0
+    dropdown.Text = default or options[1] or ""
+    dropdown.TextColor3 = Theme.Text
+    dropdown.TextScaled = true
+    dropdown.Font = Enum.Font.Gotham
+    dropdown.Parent = frame
+    
+    local dropCorner = Instance.new("UICorner")
+    dropCorner.CornerRadius = UDim.new(0, 6)
+    dropCorner.Parent = dropdown
+    
+    local selected = default or options[1] or ""
+    local isOpen = false
+    local listFrame = nil
+    
+    dropdown.MouseButton1Click:Connect(function()
+        if isOpen then
+            if listFrame then listFrame:Destroy() end
+            isOpen = false
+            return
+        end
+        
+        isOpen = true
+        listFrame = Instance.new("Frame")
+        listFrame.Size = UDim2.new(0.6, 0, 0, #options * 25)
+        listFrame.Position = UDim2.new(0.4, 0, 0, 35)
+        listFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        listFrame.BackgroundTransparency = 0.2
+        listFrame.BorderSizePixel = 0
+        listFrame.Parent = frame
+        
+        local listCorner = Instance.new("UICorner")
+        listCorner.CornerRadius = UDim.new(0, 6)
+        listCorner.Parent = listFrame
+        
+        local listLayout = Instance.new("UIListLayout")
+        listLayout.Padding = UDim.new(0, 2)
+        listLayout.Parent = listFrame
+        
+        for _, opt in ipairs(options) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 25)
+            btn.BackgroundTransparency = 1
+            btn.Text = opt
+            btn.TextColor3 = Theme.Text
+            btn.TextScaled = true
+            btn.Font = Enum.Font.Gotham
+            btn.Parent = listFrame
+            
+            btn.MouseButton1Click:Connect(function()
+                selected = opt
+                dropdown.Text = opt
+                if callback then callback(opt) end
+                listFrame:Destroy()
+                isOpen = false
+            end)
+        end
+    end)
+    
+    return dropdown, selected
+end
+
+function CreateTextbox(parent, text, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 30)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.3, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.6, 0, 1, 0)
+    box.Position = UDim2.new(0.4, 0, 0, 0)
+    box.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    box.BackgroundTransparency = 0.5
+    box.BorderSizePixel = 0
+    box.Text = default or ""
+    box.TextColor3 = Theme.Text
+    box.TextScaled = true
+    box.Font = Enum.Font.Gotham
+    box.PlaceholderText = text
+    box.Parent = frame
+    
+    local boxCorner = Instance.new("UICorner")
+    boxCorner.CornerRadius = UDim.new(0, 6)
+    boxCorner.Parent = box
+    
+    box.FocusLost:Connect(function(enter)
+        if enter and callback then callback(box.Text) end
+    end)
+    
+    return box
+end
+
+print("Часть 1 загружена. Вставьте Часть 2.")
+-- ============================================
+-- ЧАСТЬ 2: GRAPE Tool - Страницы и управление окном
+-- Вставляйте ВТОРОЙ после Части 1
+-- ============================================
+
+-- Строим страницы (контент)
+local mainPage = Pages["Main"]
+CreateSection(mainPage, "Основная информация")
+CreateLabel(mainPage, "Игрок: " .. (LocalPlayer.Name or "Unknown"))
+CreateLabel(mainPage, "FPS: " .. tostring(workspace:GetRealPhysicsFPS()))
+CreateButton(mainPage, "ESP Вкл/Выкл", function()
+    _G.ESP.enabled = not _G.ESP.enabled
+    print("ESP " .. (_G.ESP.enabled and "включен" or "выключен"))
+    if _G.ESP.enabled then
+        if not _G.ESP.running then
+            _G.ESP.running = true
+            -- Запускаем обновление (будет в Части 3)
+            -- Но поскольку ESP-функции ещё не загружены, просто вызовем позже
+        end
+    else
+        -- Очистка ESP будет в Части 3
+    end
+end)
+
+local visualPage = Pages["Visual"]
+CreateSection(visualPage, "Визуальные настройки")
+CreateToggle(visualPage, "ESP (Враги)", false, function(state)
+    _G.ESP.enabled = state
+    print("ESP состояние: " .. tostring(state))
+end)
+
+CreateSlider(visualPage, "ESP Дистанция", 0, 100, 50, function(value)
+    _G.ESP.distance = value
+    print("Дистанция ESP: " .. tostring(value))
+end)
+
+-- Прочие страницы (заглушки)
+for _, name in ipairs({"Player", "Combat", "Teleport", "Misc", "Settings"}) do
+    local page = Pages[name]
+    CreateSection(page, name:upper())
+    CreateLabel(page, "Настройки для " .. name)
+    CreateButton(page, "Функция " .. name, function()
+        print(name .. " function called")
+    end)
+end
+
+-- ============================================
+-- DRAG SYSTEM (ПЕРЕТАСКИВАНИЕ)
+-- ============================================
+local dragData = {
+    isDragging = false,
+    startPos = nil,
+    startMouse = nil,
+    offset = Vector2.new(0, 0),
+}
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragData.isDragging = true
+        dragData.startPos = MainFrame.Position
+        dragData.startMouse = input.Position
+        dragData.offset = Vector2.new(
+            MainFrame.AbsolutePosition.X - input.Position.X,
+            MainFrame.AbsolutePosition.Y - input.Position.Y
+        )
+    end
+end)
+
+TopBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragData.isDragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragData.isDragging then
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            local newPos = UDim2.new(
+                0, input.Position.X + dragData.offset.X,
+                0, input.Position.Y + dragData.offset.Y
+            )
+            -- Ограничиваем по экрану
+            local screenSize = Camera.ViewportSize or Vector2.new(1920, 1080)
+            local maxX = screenSize.X - MainFrame.AbsoluteSize.X
+            local maxY = screenSize.Y - MainFrame.AbsoluteSize.Y
+            local newX = math.clamp(newPos.X.Offset, 0, maxX)
+            local newY = math.clamp(newPos.Y.Offset, 0, maxY)
+            MainFrame.Position = UDim2.new(0, newX, 0, newY)
+        end
+    end
+end)
+
+-- ============================================
+-- MINIMIZE / MAXIMIZE
+-- ============================================
+local minimized = false
+
+MinimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        -- Сворачиваем до TopBar
+        createTween(MainFrame, {Size = UDim2.new(0, 600, 0, 35)}, 0.3)
+        ContentFrame.Visible = false
+    else
+        -- Разворачиваем
+        createTween(MainFrame, {Size = UDim2.new(0, 600, 0, 450)}, 0.3)
+        ContentFrame.Visible = true
+    end
+end)
+
+-- ============================================
+-- CLOSE / OPEN (кнопка G)
+-- ============================================
+local hidden = false
+local openBtn = nil
+
+CloseBtn.MouseButton1Click:Connect(function()
+    hidden = true
+    createTween(MainFrame, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)}, 0.3)
+    task.wait(0.3)
+    MainFrame.Visible = false
+    
+    -- Создаём кнопку G
+    if not openBtn then
+        openBtn = Instance.new("TextButton")
+        openBtn.Name = "OpenBtn"
+        openBtn.Size = UDim2.new(0, 40, 0, 40)
+        openBtn.Position = UDim2.new(0, 10, 0.5, -20)
+        openBtn.BackgroundColor3 = Theme.Accent
+        openBtn.BackgroundTransparency = 0.3
+        openBtn.BorderSizePixel = 0
+        openBtn.Text = "G"
+        openBtn.TextColor3 = Color3.new(1,1,1)
+        openBtn.TextScaled = true
+        openBtn.Font = Enum.Font.GothamBold
+        openBtn.Parent = ScreenGui
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(1, 0)
+        btnCorner.Parent = openBtn
+        
+        openBtn.MouseButton1Click:Connect(function()
+            hidden = false
+            openBtn.Visible = false
+            MainFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 600, 0, 450)
+            MainFrame.BackgroundTransparency = 0.15
+            createTween(MainFrame, {BackgroundTransparency = 0.15}, 0.2)
+            ContentFrame.Visible = true
+        end)
+    else
+        openBtn.Visible = true
+    end
+end)
+
+print("Часть 2 загружена. Вставьте Часть 3 для ESP и логики.")
+-- ============================================
+-- ЧАСТЬ 3: GRAPE Tool - ESP и функциональность
+-- Вставляйте ТРЕТЬЕЙ после Части 2
+-- ============================================
+
+-- Реализация ESP (полностью рабочий код)
+local function createESP(model)
+    if not model or model == LocalPlayer.Character then return end
+    -- Проверяем, есть ли уже ESP
+    for _, child in pairs(model:GetChildren()) do
+        if child:IsA("BillboardGui") and child.Name:find("ESP_") then
+            return
+        end
+    end
+
+    local adornee = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+    if not adornee then adornee = model end
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = "ESP_" .. tostring(math.random(1000,9999))
+    bill.Size = UDim2.new(0, 120, 0, 80)
+    bill.AlwaysOnTop = true
+    bill.Adornee = adornee
+    bill.Parent = model
+
+    local box = Instance.new("Frame")
+    box.Size = UDim2.new(1, 0, 1, 0)
+    box.BackgroundTransparency = 1
+    box.BorderSizePixel = 2
+    box.BorderColor3 = Color3.new(1, 1, 1)
+    box.Parent = bill
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 0, 0.25, 0)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = model.Name or "Player"
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.SourceSansBold
+    nameLabel.Parent = box
+
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Size = UDim2.new(1, 0, 0.2, 0)
+    distLabel.Position = UDim2.new(0, 0, 0.25, 0)
+    distLabel.BackgroundTransparency = 1
+    distLabel.Text = "0.0 m"
+    distLabel.TextColor3 = Color3.new(1, 1, 1)
+    distLabel.TextScaled = true
+    distLabel.Font = Enum.Font.SourceSansBold
+    distLabel.Parent = box
+
+    local hpBar = Instance.new("Frame")
+    hpBar.Size = UDim2.new(0.8, 0, 0.15, 0)
+    hpBar.Position = UDim2.new(0.1, 0, 0.7, 0)
+    hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
+    hpBar.BackgroundTransparency = 0.6
+    hpBar.BorderSizePixel = 0
+    hpBar.Parent = box
+
+    local hpText = Instance.new("TextLabel")
+    hpText.Size = UDim2.new(1, 0, 0.2, 0)
+    hpText.Position = UDim2.new(0, 0, 0.6, 0)
+    hpText.BackgroundTransparency = 1
+    hpText.Text = "100 HP"
+    hpText.TextColor3 = Color3.new(1, 1, 1)
+    hpText.TextScaled = true
+    hpText.Font = Enum.Font.SourceSansBold
+    hpText.Parent = box
+
+    return {model = model, bill = bill, hpBar = hpBar, hpText = hpText, distLabel = distLabel, nameLabel = nameLabel}
+end
+
+local function getTargets()
+    local targets = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+            table.insert(targets, p.Character)
+        end
+    end
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj ~= LocalPlayer.Character then
+            local found = false
+            for _, t in ipairs(targets) do if t == obj then found = true break end end
+            if not found then table.insert(targets, obj) end
+        end
+    end
+    return targets
+end
+
+local function updateESP()
+    if not _G.ESP.enabled then
+        -- Если ESP выключен, удаляем все объекты
+        for _, data in pairs(_G.ESP.objects) do
+            data.bill:Destroy()
+        end
+        _G.ESP.objects = {}
+        return
+    end
+    
+    local targets = getTargets()
+    -- Удаляем для мёртвых
+    for model, data in pairs(_G.ESP.objects) do
+        if not table.find(targets, model) then
+            data.bill:Destroy()
+            _G.ESP.objects[model] = nil
+        end
+    end
+
+    for _, model in ipairs(targets) do
+        local data = _G.ESP.objects[model]
+        if not data then
+            data = createESP(model)
+            if data then _G.ESP.objects[model] = data end
+        end
+        if data then
+            -- HP
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local hp = humanoid.Health
+                local maxHp = humanoid.MaxHealth or 100
+                local percent = math.clamp(hp / maxHp, 0, 1)
+                data.hpBar.Size = UDim2.new(0.8 * percent, 0, 0.15, 0)
+                data.hpBar.BackgroundColor3 = Color3.new(1 - percent, percent, 0)
+                data.hpText.Text = string.format("%.0f / %.0f HP", hp, maxHp)
+            end
+
+            -- Дистанция
+            local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+            if root and LocalPlayer.Character then
+                local localRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Head")
+                if localRoot then
+                    local dist = (root.Position - localRoot.Position).Magnitude
+                    data.distLabel.Text = string.format("%.1f m", dist)
+                end
+            end
+
+            data.nameLabel.Text = model.Name
+        end
+    end
+end
+
+-- Запускаем постоянное обновление ESP
+_G.ESP.running = true
+RunService.Heartbeat:Connect(updateESP)
+
+-- Отслеживаем новых игроков
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.3)
+        if _G.ESP.enabled then updateESP() end
+    end)
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+    if _G.ESP.enabled and obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj ~= LocalPlayer.Character then
+        task.wait(0.3)
+        updateESP()
+    end
+end)
+
+-- Подключаем кнопки меню к ESP (переопределяем их поведение, если они уже созданы)
+-- Находим кнопку "ESP Вкл/Выкл" на Main и переключатель на Visual
+local function setupControls()
+    -- Ищем кнопку на Main
+    local mainBtn = nil
+    for _, child in pairs(ScreenGui:GetDescendants()) do
+        if child:IsA("TextButton") and child.Text == "ESP Вкл/Выкл" then
+            mainBtn = child
+            break
+        end
+    end
+    if mainBtn then
+        -- Удаляем старые обработчики, чтобы не дублировать (просто заменим)
+        mainBtn.MouseButton1Click:Connect(function()
+            _G.ESP.enabled = not _G.ESP.enabled
+            print("ESP " .. (_G.ESP.enabled and "включен" or "выключен"))
+            if not _G.ESP.enabled then
+                for _, data in pairs(_G.ESP.objects) do
+                    data.bill:Destroy()
+                end
+                _G.ESP.objects = {}
+            end
+        end)
+    end
+
+    -- Ищем переключатель на Visual (по тексту "ESP (Враги)")
+    local toggleBtn = nil
+    for _, child in pairs(ScreenGui:GetDescendants()) do
+        if child:IsA("TextLabel") and child.Text == "ESP (Враги)" then
+            local frame = child.Parent
+            if frame and frame:IsA("Frame") then
+                for _, c in pairs(frame:GetChildren()) do
+                    if c:IsA("TextButton") and c.Size == UDim2.new(0, 40, 0, 20) then
+                        toggleBtn = c
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if toggleBtn then
+        -- Переопределяем клик, чтобы синхронизировать с _G.ESP.enabled
+        toggleBtn.MouseButton1Click:Connect(function()
+            -- Определяем текущее состояние по положению индикатора
+            local indicator = toggleBtn:FindFirstChildOfClass("Frame")
+            if indicator then
+                local pos = indicator.Position
+                if pos.X.Offset > 10 then
+                    _G.ESP.enabled = true
+                else
+                    _G.ESP.enabled = false
+                end
+                if not _G.ESP.enabled then
+                    for _, data in pairs(_G.ESP.objects) do
+                        data.bill:Destroy()
+                    end
+                    _G.ESP.objects = {}
+                end
+            end
+        end)
+    end
+end
+
+-- Запускаем привязку после небольшой задержки, чтобы GUI успел создаться
+task.wait(0.5)
+setupControls()
+
+print("Часть 3 загружена. ESP полностью готов к работе.")
