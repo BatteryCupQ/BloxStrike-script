@@ -1,0 +1,688 @@
+-- ============================================
+-- ЧАСТЬ 1: GRAPE Tool - Visuals (GUI)
+-- Копируйте ПЕРВОЙ
+-- ============================================
+
+-- SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Глобальные настройки ESP
+_G.ESP = _G.ESP or {}
+_G.ESP.enabled = false
+_G.ESP.showBox = true
+_G.ESP.showHP = true
+_G.ESP.showLines = true
+_G.ESP.showNames = true
+_G.ESP.showBomb = true
+_G.ESP.objects = {}
+_G.ESP.lines = {}
+_G.ESP.running = false
+
+-- THEMES
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    Accent = Color3.fromRGB(255, 0, 170),
+    AccentDark = Color3.fromRGB(200, 0, 130),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDim = Color3.fromRGB(150, 150, 150),
+    Border = Color3.fromRGB(40, 40, 40),
+    Hover = Color3.fromRGB(30, 30, 30),
+}
+
+-- UTILITY
+local function getUI()
+    return gethui and gethui() or CoreGui
+end
+
+local function createTween(obj, props, duration, style)
+    style = style or Enum.EasingStyle.Quad
+    local tween = TweenService:Create(obj, TweenInfo.new(duration or 0.3, style, Enum.EasingDirection.Out), props)
+    tween:Play()
+    return tween
+end
+
+-- MAIN GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GRAPE_Tool"
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = getUI()
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 500, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+-- Shadow
+local Shadow = Instance.new("Frame")
+Shadow.Name = "Shadow"
+Shadow.Size = UDim2.new(1, 10, 1, 10)
+Shadow.Position = UDim2.new(0, -5, 0, -5)
+Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.BackgroundTransparency = 0.5
+Shadow.BorderSizePixel = 0
+Shadow.Parent = MainFrame
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = MainFrame
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Theme.Accent
+Stroke.Thickness = 1
+Stroke.Transparency = 0.8
+Stroke.Parent = MainFrame
+
+local Glow = Instance.new("Frame")
+Glow.Name = "Glow"
+Glow.Size = UDim2.new(1, 20, 1, 20)
+Glow.Position = UDim2.new(0, -10, 0, -10)
+Glow.BackgroundColor3 = Theme.Accent
+Glow.BackgroundTransparency = 0.95
+Glow.BorderSizePixel = 0
+Glow.Parent = MainFrame
+
+local GlowCorner = Instance.new("UICorner")
+GlowCorner.CornerRadius = UDim.new(0, 18)
+GlowCorner.Parent = Glow
+
+-- TOP BAR
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 35)
+TopBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+TopBar.BackgroundTransparency = 0.5
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 12)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0.5, 0, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "GRAPE Tool"
+Title.TextColor3 = Theme.Accent
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextWrapped = true
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Size = UDim2.new(0, 30, 1, 0)
+MinimizeBtn.Position = UDim2.new(1, -65, 0, 0)
+MinimizeBtn.BackgroundTransparency = 1
+MinimizeBtn.Text = "□"
+MinimizeBtn.TextColor3 = Theme.Text
+MinimizeBtn.TextScaled = true
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.Parent = TopBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.new(0, 30, 1, 0)
+CloseBtn.Position = UDim2.new(1, -35, 0, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Text = "—"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.TextScaled = true
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Parent = TopBar
+
+-- CONTENT AREA (без бокового меню, одна страница)
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, 0, 1, -35)
+ContentFrame.Position = UDim2.new(0, 0, 0, 35)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+local Page = Instance.new("Frame")
+Page.Name = "Page_Visuals"
+Page.Size = UDim2.new(1, 0, 1, 0)
+Page.BackgroundTransparency = 1
+Page.Parent = ContentFrame
+
+local PageList = Instance.new("UIListLayout")
+PageList.Padding = UDim.new(0, 8)
+PageList.FillDirection = Enum.FillDirection.Vertical
+PageList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+PageList.VerticalAlignment = Enum.VerticalAlignment.Top
+PageList.Parent = Page
+
+local PagePadding = Instance.new("UIPadding")
+PagePadding.PaddingTop = UDim.new(0, 15)
+PagePadding.PaddingLeft = UDim.new(0, 15)
+PagePadding.PaddingRight = UDim.new(0, 15)
+PagePadding.Parent = Page
+
+-- ELEMENTS CREATORS (доступны глобально)
+function CreateSection(parent, text)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, 0, 0, 30)
+    section.BackgroundTransparency = 1
+    section.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text:upper()
+    label.TextColor3 = Theme.Accent
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = section
+    return section
+end
+
+function CreateToggle(parent, text, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(0, 40, 0, 20)
+    toggle.Position = UDim2.new(1, -45, 0.5, -10)
+    toggle.BackgroundColor3 = default and Theme.Accent or Color3.fromRGB(40, 40, 40)
+    toggle.BackgroundTransparency = 0.5
+    toggle.BorderSizePixel = 0
+    toggle.Text = ""
+    toggle.Parent = frame
+    
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    toggleCorner.Parent = toggle
+    
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 14, 0, 14)
+    indicator.Position = default and UDim2.new(0, 24, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+    indicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    indicator.BackgroundTransparency = 0.2
+    indicator.BorderSizePixel = 0
+    indicator.Parent = toggle
+    
+    local indCorner = Instance.new("UICorner")
+    indCorner.CornerRadius = UDim.new(1, 0)
+    indCorner.Parent = indicator
+    
+    local state = default or false
+    
+    toggle.MouseButton1Click:Connect(function()
+        state = not state
+        if state then
+            createTween(toggle, {BackgroundColor3 = Theme.Accent}, 0.2)
+            createTween(indicator, {Position = UDim2.new(0, 24, 0.5, -7)}, 0.2)
+        else
+            createTween(toggle, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, 0.2)
+            createTween(indicator, {Position = UDim2.new(0, 2, 0.5, -7)}, 0.2)
+        end
+        if callback then callback(state) end
+    end)
+    
+    return toggle, state
+end
+
+-- Строим страницу Visuals
+CreateSection(Page, "Настройки ESP")
+
+CreateToggle(Page, "Включить ESP", false, function(state)
+    _G.ESP.enabled = state
+    if not state then
+        -- Очистка ESP
+        for _, data in pairs(_G.ESP.objects) do
+            data.bill:Destroy()
+        end
+        _G.ESP.objects = {}
+        for _, line in pairs(_G.ESP.lines) do
+            line:Remove()
+        end
+        _G.ESP.lines = {}
+    end
+end)
+
+CreateToggle(Page, "Боксы (рамки)", true, function(state)
+    _G.ESP.showBox = state
+end)
+
+CreateToggle(Page, "Полоска HP", true, function(state)
+    _G.ESP.showHP = state
+end)
+
+CreateToggle(Page, "Линии к игроку", true, function(state)
+    _G.ESP.showLines = state
+end)
+
+CreateToggle(Page, "Никнеймы", true, function(state)
+    _G.ESP.showNames = state
+end)
+
+CreateToggle(Page, "Bomb ESP", true, function(state)
+    _G.ESP.showBomb = state
+end)
+
+-- DRAG SYSTEM
+local dragData = {
+    isDragging = false,
+    offset = Vector2.new(0, 0),
+}
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragData.isDragging = true
+        dragData.offset = Vector2.new(
+            MainFrame.AbsolutePosition.X - input.Position.X,
+            MainFrame.AbsolutePosition.Y - input.Position.Y
+        )
+    end
+end)
+
+TopBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragData.isDragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragData.isDragging then
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local newX = math.clamp(input.Position.X + dragData.offset.X, 0, Camera.ViewportSize.X - MainFrame.AbsoluteSize.X)
+            local newY = math.clamp(input.Position.Y + dragData.offset.Y, 0, Camera.ViewportSize.Y - MainFrame.AbsoluteSize.Y)
+            MainFrame.Position = UDim2.new(0, newX, 0, newY)
+        end
+    end
+end)
+
+-- MINIMIZE
+local minimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        createTween(MainFrame, {Size = UDim2.new(0, 500, 0, 35)}, 0.3)
+        ContentFrame.Visible = false
+    else
+        createTween(MainFrame, {Size = UDim2.new(0, 500, 0, 400)}, 0.3)
+        ContentFrame.Visible = true
+    end
+end)
+
+-- CLOSE / OPEN (кнопка G)
+local hidden = false
+local openBtn = nil
+
+CloseBtn.MouseButton1Click:Connect(function()
+    hidden = true
+    createTween(MainFrame, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0)}, 0.3)
+    task.wait(0.3)
+    MainFrame.Visible = false
+    
+    if not openBtn then
+        openBtn = Instance.new("TextButton")
+        openBtn.Name = "OpenBtn"
+        openBtn.Size = UDim2.new(0, 40, 0, 40)
+        openBtn.Position = UDim2.new(0, 10, 0.5, -20)
+        openBtn.BackgroundColor3 = Theme.Accent
+        openBtn.BackgroundTransparency = 0.3
+        openBtn.BorderSizePixel = 0
+        openBtn.Text = "G"
+        openBtn.TextColor3 = Color3.new(1,1,1)
+        openBtn.TextScaled = true
+        openBtn.Font = Enum.Font.GothamBold
+        openBtn.Parent = ScreenGui
+        
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(1, 0)
+        btnCorner.Parent = openBtn
+        
+        openBtn.MouseButton1Click:Connect(function()
+            hidden = false
+            openBtn.Visible = false
+            MainFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 500, 0, 400)
+            MainFrame.BackgroundTransparency = 0.15
+            createTween(MainFrame, {BackgroundTransparency = 0.15}, 0.2)
+            ContentFrame.Visible = true
+        end)
+    else
+        openBtn.Visible = true
+    end
+end)
+
+print("Часть 1 загружена. Вставьте Часть 2.")
+-- ============================================
+-- ЧАСТЬ 2: GRAPE Tool - ESP логика
+-- Копируйте ВТОРОЙ после Части 1
+-- ============================================
+
+-- Проверка наличия Drawing API
+local hasDrawing = pcall(function() return Drawing.new("Line") end)
+local lineObjects = {}
+
+-- Функция создания ESP для игроков
+local function createPlayerESP(model)
+    if not model or model == LocalPlayer.Character then return end
+    -- Проверяем, есть ли уже ESP
+    for _, child in pairs(model:GetChildren()) do
+        if child:IsA("BillboardGui") and child.Name:find("ESP_") then
+            return
+        end
+    end
+
+    local adornee = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+    if not adornee then adornee = model end
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = "ESP_" .. tostring(math.random(1000,9999))
+    bill.Size = UDim2.new(0, 120, 0, 80)
+    bill.AlwaysOnTop = true
+    bill.Adornee = adornee
+    bill.Parent = model
+
+    -- Бокс (рамка)
+    local box = Instance.new("Frame")
+    box.Name = "Box"
+    box.Size = UDim2.new(1, 0, 1, 0)
+    box.BackgroundTransparency = 1
+    box.BorderSizePixel = 2
+    box.BorderColor3 = Color3.new(1, 1, 1)
+    box.Visible = _G.ESP.showBox
+    box.Parent = bill
+
+    -- Никнейм
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "Name"
+    nameLabel.Size = UDim2.new(1, 0, 0.25, 0)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = model.Name or "Player"
+    nameLabel.TextColor3 = Color3.new(1, 1, 1)
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.SourceSansBold
+    nameLabel.Visible = _G.ESP.showNames
+    nameLabel.Parent = box
+
+    -- Полоска HP
+    local hpBar = Instance.new("Frame")
+    hpBar.Name = "HPBar"
+    hpBar.Size = UDim2.new(0.8, 0, 0.15, 0)
+    hpBar.Position = UDim2.new(0.1, 0, 0.7, 0)
+    hpBar.BackgroundColor3 = Color3.new(0, 1, 0)
+    hpBar.BackgroundTransparency = 0.6
+    hpBar.BorderSizePixel = 0
+    hpBar.Visible = _G.ESP.showHP
+    hpBar.Parent = box
+
+    local hpText = Instance.new("TextLabel")
+    hpText.Name = "HPText"
+    hpText.Size = UDim2.new(1, 0, 0.2, 0)
+    hpText.Position = UDim2.new(0, 0, 0.6, 0)
+    hpText.BackgroundTransparency = 1
+    hpText.Text = "100 HP"
+    hpText.TextColor3 = Color3.new(1, 1, 1)
+    hpText.TextScaled = true
+    hpText.Font = Enum.Font.SourceSansBold
+    hpText.Visible = _G.ESP.showHP
+    hpText.Parent = box
+
+    return {model = model, bill = bill, box = box, nameLabel = nameLabel, hpBar = hpBar, hpText = hpText}
+end
+
+-- Функция для Bomb ESP
+local function createBombESP(bomb)
+    if not bomb then return end
+    for _, child in pairs(bomb:GetChildren()) do
+        if child:IsA("BillboardGui") and child.Name:find("BombESP") then
+            return
+        end
+    end
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = "BombESP_" .. tostring(math.random(1000,9999))
+    bill.Size = UDim2.new(0, 80, 0, 40)
+    bill.AlwaysOnTop = true
+    bill.Adornee = bomb
+    bill.Parent = bomb
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = Color3.new(1, 0, 0)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.new(1, 0, 0)
+    frame.Parent = bill
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "💣 BOMB"
+    label.TextColor3 = Color3.new(1, 0, 0)
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSansBold
+    label.Parent = frame
+
+    return {bill = bill, frame = frame}
+end
+
+-- Поиск целей (игроки + бомба)
+local function getTargets()
+    local targets = {}
+    -- Игроки
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+            table.insert(targets, p.Character)
+        end
+    end
+    -- Боты / другие модели с Humanoid
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj ~= LocalPlayer.Character then
+            local found = false
+            for _, t in ipairs(targets) do if t == obj then found = true break end end
+            if not found then table.insert(targets, obj) end
+        end
+    end
+    return targets
+end
+
+local function getBomb()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("Part") then
+            local name = obj.Name:lower()
+            if name:find("bomb") or name:find("c4") or name:find("explosive") then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+-- Обновление линий (через Drawing, если доступно)
+local function updateLines()
+    if not _G.ESP.showLines or not _G.ESP.enabled then
+        for _, line in pairs(_G.ESP.lines) do
+            line:Remove()
+        end
+        _G.ESP.lines = {}
+        return
+    end
+
+    if not hasDrawing then return end
+
+    local localRoot = LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Head"))
+    if not localRoot then return end
+    local center = Camera:WorldToViewportPoint(localRoot.Position)
+    local centerVec = Vector2.new(center.X, center.Y)
+
+    local targets = getTargets()
+    -- Удаляем старые линии для мёртвых целей
+    for i = #_G.ESP.lines, 1, -1 do
+        local line = _G.ESP.lines[i]
+        if not line or not line._target or not table.find(targets, line._target) then
+            line:Remove()
+            table.remove(_G.ESP.lines, i)
+        end
+    end
+
+    -- Создаём/обновляем линии для живых
+    for _, model in ipairs(targets) do
+        local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+        if root then
+            local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+            if onScreen then
+                local line = nil
+                for _, l in pairs(_G.ESP.lines) do
+                    if l._target == model then line = l break end
+                end
+                if not line then
+                    line = Drawing.new("Line")
+                    line.Thickness = 1
+                    line.Color = Color3.fromRGB(255, 0, 170)
+                    line.Transparency = 0.5
+                    line._target = model
+                    table.insert(_G.ESP.lines, line)
+                end
+                line.From = centerVec
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Visible = true
+            else
+                -- Скрываем линию, если цель вне экрана
+                for _, l in pairs(_G.ESP.lines) do
+                    if l._target == model then l.Visible = false end
+                end
+            end
+        end
+    end
+end
+
+-- Основное обновление ESP
+local function updateESP()
+    if not _G.ESP.enabled then
+        -- Очистка
+        for _, data in pairs(_G.ESP.objects) do
+            data.bill:Destroy()
+        end
+        _G.ESP.objects = {}
+        for _, line in pairs(_G.ESP.lines) do
+            line:Remove()
+        end
+        _G.ESP.lines = {}
+        return
+    end
+
+    -- Обновление игроков
+    local targets = getTargets()
+    for model, data in pairs(_G.ESP.objects) do
+        if not table.find(targets, model) then
+            data.bill:Destroy()
+            _G.ESP.objects[model] = nil
+        end
+    end
+
+    for _, model in ipairs(targets) do
+        local data = _G.ESP.objects[model]
+        if not data then
+            data = createPlayerESP(model)
+            if data then _G.ESP.objects[model] = data end
+        end
+        if data then
+            -- Обновляем видимость элементов по настройкам
+            data.box.Visible = _G.ESP.showBox
+            data.nameLabel.Visible = _G.ESP.showNames
+            data.hpBar.Visible = _G.ESP.showHP
+            data.hpText.Visible = _G.ESP.showHP
+
+            -- HP
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local hp = humanoid.Health
+                local maxHp = humanoid.MaxHealth or 100
+                local percent = math.clamp(hp / maxHp, 0, 1)
+                data.hpBar.Size = UDim2.new(0.8 * percent, 0, 0.15, 0)
+                data.hpBar.BackgroundColor3 = Color3.new(1 - percent, percent, 0)
+                data.hpText.Text = string.format("%.0f / %.0f HP", hp, maxHp)
+            end
+        end
+    end
+
+    -- Обновление линий
+    updateLines()
+
+    -- Bomb ESP
+    if _G.ESP.showBomb and _G.ESP.enabled then
+        local bomb = getBomb()
+        if bomb then
+            -- Проверяем, есть ли уже ESP для бомбы
+            local found = false
+            for _, child in pairs(bomb:GetChildren()) do
+                if child:IsA("BillboardGui") and child.Name:find("BombESP") then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                createBombESP(bomb)
+            end
+        end
+    else
+        -- Удаляем Bomb ESP
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BillboardGui") and obj.Name:find("BombESP") then
+                obj:Destroy()
+            end
+        end
+    end
+end
+
+-- Запуск постоянного обновления
+_G.ESP.running = true
+RunService.Heartbeat:Connect(updateESP)
+
+-- Отслеживание новых игроков и бомбы
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function(char)
+        task.wait(0.3)
+        if _G.ESP.enabled then updateESP() end
+    end)
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+    if _G.ESP.enabled and obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj ~= LocalPlayer.Character then
+        task.wait(0.3)
+        updateESP()
+    end
+    -- Появление бомбы
+    if _G.ESP.showBomb and _G.ESP.enabled then
+        local name = obj.Name:lower()
+        if name:find("bomb") or name:find("c4") or name:find("explosive") then
+            task.wait(0.3)
+            createBombESP(obj)
+        end
+    end
+end)
+
+print("Часть 2 загружена. ESP готов.")
